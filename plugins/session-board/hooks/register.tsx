@@ -10,6 +10,7 @@ import {
   AUTHORITY, briefOps, criteriaOf, emptyVerdict, isAuthority, parseTaskInput, protocol, renderTaskMd, ruleCandidates, slugify, startMessage,
   VERDICT_LABEL, verdictMessage, type VerdictKind,
 } from './task'
+import { LADDER_MIN_WORDS, proseWords, RUNGS } from './ladder'
 import { Band, Board, resolveView, type Actions, type AddKind, type Data } from './views'
 
 const PANE = 'board'
@@ -35,6 +36,8 @@ const policy = atom({ plugin: 'session-board', key: 'policy' } as const, 'normal
 const sent = atom({ plugin: 'session-board', key: 'sent' } as const, [] as SentAction[])
 // the project folder, fixed once per session: the shell's cwd moves with every cd
 const home = atom({ plugin: 'session-board', key: 'home' } as const, { sid: '', dir: '' })
+// the format ladder shows under the last answer when it was long; any new message takes it down
+const ladder = atom({ plugin: 'session-board', key: 'ladder' } as const, false)
 
 type Current = { n: number; ask: string; tools: Record<string, number>; files: Set<string>; paths: Set<string>; errors: string[]; ops: Op[]; touched: string[] }
 
@@ -767,6 +770,7 @@ export const register: Register = (on, options) => {
   // ---------- turn pipeline ----------
 
   on('prompt.submit', async ($, e, next) => {
+    await update($, ladder, () => false)
     const L = await read($, ledger)
     current = { n: (L.turns.at(-1)?.n ?? 0) + 1, ask: e.text.trim() || (e.attachments?.length ? '(вложение без текста)' : ''), tools: {}, files: new Set(), paths: new Set(), errors: [], ops: [], touched: [] }
     await update($, live, () => [])
@@ -825,6 +829,7 @@ export const register: Register = (on, options) => {
 
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
+    if (!e.agentId) await update($, ladder, () => e.reason === 'answer' && !e.isAborted && proseWords(e.answer) >= LADDER_MIN_WORDS)
     if (e.agentId || !current) return r
     const c = current
     current = null
@@ -1171,13 +1176,18 @@ export const register: Register = (on, options) => {
     const st = await read($, status)
     const v = await read($, verdict)
     const fixes = ruleCandidates(v).length + Object.values(v.marks).filter(m => m === 'no').length
-    return Band($.ui.resolve(e), { ledger: L, mapping: st.phase === 'mapping', mappingNote: st.note, cols: e.props.bodyColumns, fixes }, {
+    const showLadder = await read($, ladder)
+    return Band($.ui.resolve(e), { ledger: L, mapping: st.phase === 'mapping', mappingNote: st.note, cols: e.props.bodyColumns, fixes, ladder: showLadder ? RUNGS : [] }, {
       open: x => {
         openBoard($, true)
         void update($, view, () => x)
       },
       accept: () => {
         sendVerdict($, 'accept').catch((err: unknown) => $.ui.toast(`Доска: ${String((err as Error)?.message ?? err).slice(0, 80)}`))
+      },
+      rung: text => {
+        void update($, ladder, () => false)
+        say($, text)
       },
     })
   })
