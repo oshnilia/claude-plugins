@@ -377,7 +377,8 @@ async function openReport($: EngineInterface) {
     $.ui.toast('У задачи ещё нет папки: отчёт не собрать')
     return
   }
-  const path = (await $.fs.exists(`${dir}/report.html`)) ? `${dir}/report.html` : await buildReport($)
+  // always rebuild: an old file would show an old layout and a stale ledger
+  const path = await buildReport($)
   if (path) await openPath($, path)
 }
 

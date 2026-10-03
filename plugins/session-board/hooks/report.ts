@@ -132,8 +132,8 @@ export function renderReport(L: Ledger, diff: ReportDiff, generated: string): st
     <div><h2>Как шла сессия</h2><p class="hint">Каждая цель — своя линия, станции — шаги по ходам слева направо. Нажми на станцию, чтобы открыть детали, или на номер хода внизу.</p></div>
     <button class="play" id="play">Проиграть сессию</button>
   </div>
-  <div class="map" id="map" tabindex="0" aria-label="Карта сессии"><div class="map-inner"><div class="lanes-fixed" id="lanes-fixed"></div><svg id="mapsvg" role="img" aria-label="Линии целей по ходам сессии"></svg><div class="tip" id="tip" hidden></div></div></div>
   <div class="col">
+    <div class="map" id="map" tabindex="0" aria-label="Карта сессии"><div class="map-inner"><div class="lanes-fixed" id="lanes-fixed"></div><svg id="mapsvg" role="img" aria-label="Линии целей по ходам сессии"></svg><div class="tip" id="tip" hidden></div></div></div>
     <div class="turnbar" id="turncard" aria-live="polite"></div>
     <div class="legend">${legend}</div>
   </div>

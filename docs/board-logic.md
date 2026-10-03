@@ -96,7 +96,7 @@ repeat the pane: the pane is for the verdict, the report is for understanding th
 5. Below the map: "Развилки и тупики" in time order (a click finds the station on the map), "Что проверено" with the
    proof folded, "Что изменилось" with a bar per file and the diff on click, not done, risks, next, how to check.
 
-Reduced motion shows the final map at once. On a phone the map scrolls sideways and the details open as a bottom sheet.
+The map stays inside the page column: its spacing shrinks to fit, and what still does not fit scrolls inside the frame. Reduced motion shows the final map at once. On a phone the details open as a bottom sheet. "Открыть отчёт" rebuilds the page every time.
 The verdict lives in the pane, not in the report: a local page cannot write into the session.
 
 ## The verdict

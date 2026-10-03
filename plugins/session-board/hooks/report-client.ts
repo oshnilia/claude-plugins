@@ -29,7 +29,9 @@ section{padding:44px 0 0}
 .maphead{display:flex;justify-content:space-between;align-items:end;gap:20px;flex-wrap:wrap;margin-bottom:16px}
 .play{border:2px solid var(--ink);background:var(--ink);color:var(--ground);border-radius:999px;padding:8px 20px;font-weight:600;cursor:pointer;white-space:nowrap}
 .play:hover{opacity:.88}.play:focus-visible,.st:focus-visible,.rowlink:focus-visible{outline:3px solid #1f6feb;outline-offset:3px}
-.map{overflow-x:auto;overflow-y:hidden;border-top:1px solid var(--hair);border-bottom:1px solid var(--hair);cursor:grab;scrollbar-width:thin;overscroll-behavior-x:contain}
+.map{overflow-x:auto;overflow-y:hidden;border:1px solid var(--hair);border-radius:14px;cursor:grab;scrollbar-width:thin;overscroll-behavior-x:contain}
+.map.more-r{-webkit-mask-image:linear-gradient(to right,#000 calc(100% - 48px),transparent);mask-image:linear-gradient(to right,#000 calc(100% - 48px),transparent)}
+
 .map.drag{cursor:grabbing;user-select:none}
 .map-inner{position:relative}
 #mapsvg{display:block}
@@ -155,48 +157,64 @@ export const REPORT_JS = String.raw`
   });
   lanes.forEach(function(l){ l.g.lane = l; l.main.forEach(function(s){ s.lane = l; s.spur.forEach(function(c){ c.lane = l; c.anchor = s; }); }); });
 
-  var GAP = 34, PAD = 30, MINCOL = 58, LEFT = 32, LEVEL = 30, SG = 24;
-  var cols = {}, x = LEFT;
-  turnNs.forEach(function(t){
-    var cnt = 0;
-    lanes.forEach(function(l){ var c = l.main.filter(function(s){ return s.turn === t; }).length + (l.g.turn === t ? 1 : 0); if (c > cnt) cnt = c; });
-    cols[t] = { x: x, w: Math.max(MINCOL, cnt * GAP + PAD), k: {} };
-    x += cols[t].w;
-  });
-  var colEnd = x;
+  // spacing shrinks (down to what a station needs) so the map fits the page column; beyond that the frame scrolls
+  var LEFT = 32, LEVEL = 30, GAP, PAD, MINCOL, SG, cols, colEnd, AXIS_Y, H, W;
   function place(t, li){ var c = cols[t]; c.k[li] = c.k[li] || 0; var px = c.x + PAD / 2 + (c.k[li] + 0.5) * GAP; c.k[li]++; return px; }
-
-  var y = 18, maxX = colEnd;
-  lanes.forEach(function(l, li){
-    l.g.x = place(l.g.turn, li);
-    l.main.forEach(function(s){ s.x = place(s.turn, li); });
-    var last = { '-1': {}, '1': {} }, up = 0, down = 0, flip = -1;
-    l.main.forEach(function(s){
-      if (!s.spur.length) return;
-      var start = s.x, end = s.x + 26 + s.spur.length * SG, pick = null;
-      for (var lev = 1; lev <= 6 && !pick; lev++) {
-        var sides = [flip, -flip];
-        for (var j = 0; j < 2; j++) { var e = last[sides[j]][lev]; if (e == null || e < start - 10) { pick = { side: sides[j], lev: lev }; break; } }
-      }
-      if (!pick) pick = { side: -1, lev: 7 };
-      flip = -flip;
-      last[pick.side][pick.lev] = end;
-      s.side = pick.side; s.lev = pick.lev;
-      if (pick.side < 0) up = Math.max(up, pick.lev); else down = Math.max(down, pick.lev);
-      if (end > maxX) maxX = end;
+  function layout(k){
+    GAP = Math.max(24, 34 * k); PAD = Math.max(16, 30 * k); MINCOL = Math.max(38, 58 * k); SG = Math.max(20, 24 * k);
+    cols = {};
+    var x = LEFT;
+    turnNs.forEach(function(t){
+      var cnt = 0;
+      lanes.forEach(function(l){ var c = l.main.filter(function(s){ return s.turn === t; }).length + (l.g.turn === t ? 1 : 0); if (c > cnt) cnt = c; });
+      cols[t] = { x: x, w: Math.max(MINCOL, cnt * GAP + PAD), k: {} };
+      x += cols[t].w;
     });
-    l.top = y;
-    l.y = y + 34 + up * LEVEL;
-    l.g.y = l.y;
-    l.main.forEach(function(s){
-      s.y = l.y;
-      s.spur.forEach(function(c, ci){ c.x = s.x + 30 + ci * SG; c.y = l.y + s.side * s.lev * LEVEL; c.ci = ci; });
+    colEnd = x;
+    var y = 18, maxX = colEnd;
+    lanes.forEach(function(l, li){
+      l.g.x = place(l.g.turn, li);
+      l.main.forEach(function(s){ s.x = place(s.turn, li); });
+      var last = { '-1': {}, '1': {} }, up = 0, down = 0, flip = -1;
+      l.main.forEach(function(s){
+        if (!s.spur.length) return;
+        var start = s.x, end = s.x + 26 + s.spur.length * SG, pick = null;
+        for (var lev = 1; lev <= 6 && !pick; lev++) {
+          var sides = [flip, -flip];
+          for (var j = 0; j < 2; j++) { var e = last[sides[j]][lev]; if (e == null || e < start - 10) { pick = { side: sides[j], lev: lev }; break; } }
+        }
+        if (!pick) pick = { side: -1, lev: 7 };
+        flip = -flip;
+        last[pick.side][pick.lev] = end;
+        s.side = pick.side; s.lev = pick.lev;
+        if (pick.side < 0) up = Math.max(up, pick.lev); else down = Math.max(down, pick.lev);
+        if (end > maxX) maxX = end;
+      });
+      l.top = y;
+      l.y = y + 34 + up * LEVEL;
+      l.g.y = l.y;
+      l.main.forEach(function(s){
+        s.y = l.y;
+        s.spur.forEach(function(c, ci){ c.x = s.x + 30 + ci * SG; c.y = l.y + s.side * s.lev * LEVEL; c.ci = ci; });
+      });
+      y = l.y + down * LEVEL + 40;
     });
-    y = l.y + down * LEVEL + 40;
-  });
-  var AXIS_Y = y + 4, H = AXIS_Y + 40, W = Math.max(colEnd, maxX) + 48;
+    AXIS_Y = y + 4; H = AXIS_Y + 40; W = Math.max(colEnd, maxX) + 40;
+    return W;
+  }
+  var mapBox = document.getElementById('map');
+  // a tab that opens in the background can report zero width: fall back to the column width
+  var room = (mapBox.clientWidth || Math.min(1040, document.documentElement.clientWidth) - 48) - 2;
+  if (layout(1) > room) layout(Math.max(0.5, room / W));
   svg.setAttribute('width', W); svg.setAttribute('height', H); svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H);
   document.querySelector('.map-inner').style.width = W + 'px';
+  function edges(){
+    var max = mapBox.scrollWidth - mapBox.clientWidth;
+    mapBox.classList.toggle('more-l', mapBox.scrollLeft > 4);
+    mapBox.classList.toggle('more-r', mapBox.scrollLeft < max - 4);
+  }
+  mapBox.addEventListener('scroll', edges, { passive: true });
+  edges();
 
   var defs = el('defs', {}, svg);
   var clip = el('clipPath', { id: 'reveal' }, defs);
