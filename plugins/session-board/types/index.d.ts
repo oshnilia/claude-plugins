@@ -112,6 +112,9 @@ export type Verdict = {
   rules: string[]
 }
 
+/** A board message on its way: its button stays hidden until Claude finished the turn that answers it. */
+export type SentAction = { key: string; text: string; started: boolean }
+
 /** An unfinished task in this project, offered on the Task screen of a new session. */
 export type OpenTask = { dir: string; title: string; phase: Phase; updated: string }
 
@@ -150,6 +153,8 @@ declare module 'claude-code' {
       greeted: string
       openTasks: OpenTask[]
       policy: Authority
+      sent: SentAction[]
+      home: { sid: string; dir: string }
     }
   }
 }

@@ -24,7 +24,7 @@ export type Actions = {
   undoDecision: (id: string) => void
   openFile: (path: string) => void
   showDiff: (path: string) => void
-  tellClaude: (text: string) => void
+  tellClaude: (text: string, key?: string) => void
   newTask: (text: string) => void
   formalize: () => void
   fixTask: (text: string) => void
@@ -57,6 +57,8 @@ export type Data = {
   editing: string
   openTasks: OpenTask[]
   policy: Authority
+  /** keys of board messages Claude has not answered yet */
+  sent: string[]
   width: number
 }
 
@@ -150,6 +152,12 @@ function ActionBar(els: Els, key: string, buttons: unknown[], indent = 0, top: n
   )
 }
 
+/** A button that sends a message, or a quiet note while Claude has not answered the last press. */
+function Once(els: Els, d: Data, key: string, button: unknown) {
+  const { Text } = els
+  return d.sent.includes(key) ? <Text key={`sent-${key}`} dimColor>✓ отправлено, Claude отвечает…</Text> : button
+}
+
 function Tag(els: Els, label: string, color: string) {
   const { Text } = els
   return <Text color={color} bold>{label}</Text>
@@ -226,7 +234,7 @@ export function Header(els: Els, d: Data, a: Actions) {
         <Box flexDirection="column" marginTop={SPACE.item} borderStyle="round" borderColor={BLUE} paddingX={1}>
           <Text wrap="wrap">{Tag(els, 'для Claude  ', BLUE)}заметок: {d.notes.length}. Уйдут с твоим следующим сообщением.</Text>
           {d.notes.slice(-3).map((n, i) => <Text key={`note-${i}`} dimColor wrap="wrap">• {n}</Text>)}
-          {ActionBar(els, 'notes-a', [<Button key="notes-send" label="Отправить сейчас" onPress={() => a.sendNotes()} />])}
+          {ActionBar(els, 'notes-a', [Once(els, d, 'notes', <Button key="notes-send" label="Отправить сейчас" onPress={() => a.sendNotes()} />)])}
         </Box>
       ) : null}
     </Box>
@@ -290,8 +298,8 @@ function NoTask(els: Els, d: Data, a: Actions) {
       {d.editing === 'intake'
         ? Field(els, 'intake', 'Задача', 'что сделать, зачем, что сдать, что нельзя', 'поставить', v => a.newTask(v), () => a.edit(''))
         : ActionBar(els, 'nt-a', [
-          <Button key="task-new" label="Поставить задачу" variant="primary" onPress={() => a.edit('intake')} />,
-          d.ledger.turns.length || d.ledger.nodes.length ? <Button key="task-formal" label="Оформить текущую работу" onPress={() => a.formalize()} /> : null,
+          Once(els, d, 'intake', <Button key="task-new" label="Поставить задачу" variant="primary" onPress={() => a.edit('intake')} />),
+          d.ledger.turns.length || d.ledger.nodes.length ? Once(els, d, 'formalize', <Button key="task-formal" label="Оформить текущую работу" onPress={() => a.formalize()} />) : null,
         ])}
       {Rule(els, 'r-tpl', 'Шаблон задания')}
       <Box flexDirection="column" marginTop={SPACE.item}>
@@ -333,7 +341,7 @@ export function TaskView(els: Els, d: Data, a: Actions) {
       {!t.formal ? (
         <Box flexDirection="column" borderStyle="round" borderColor={ORANGE} paddingX={1} marginTop={SPACE.item}>
           <Text wrap="wrap">{Tag(els, 'не оформлено  ', ORANGE)}Задание выросло из работы: в нём нет критериев «готово, когда». Без них приёмка будет на глаз.</Text>
-          {ActionBar(els, 'tf-a', [<Button key="task-formal" label="Оформить задание" variant="primary" onPress={() => a.formalize()} />])}
+          {ActionBar(els, 'tf-a', [Once(els, d, 'formalize', <Button key="task-formal" label="Оформить задание" variant="primary" onPress={() => a.formalize()} />)])}
         </Box>
       ) : null}
       {t.phase === 'intake' ? (
@@ -342,8 +350,8 @@ export function TaskView(els: Els, d: Data, a: Actions) {
           {d.editing === 'fix'
             ? Field(els, 'fix', 'Что поправить', 'что не так в задании', 'отправить', v => a.fixTask(v), () => a.edit(''))
             : ActionBar(els, 'ti-a', [
-              <Button key="task-start" label="Старт" variant="primary" onPress={() => a.start()} />,
-              <Button key="task-fix" label="Поправить" onPress={() => a.edit('fix')} />,
+              Once(els, d, 'start', <Button key="task-start" label="Старт" variant="primary" onPress={() => a.start()} />),
+              Once(els, d, 'fix', <Button key="task-fix" label="Поправить" onPress={() => a.edit('fix')} />),
             ])}
         </Box>
       ) : null}
@@ -367,7 +375,7 @@ export function TaskView(els: Els, d: Data, a: Actions) {
       {t.phase === 'accepted' ? (
         d.editing === 'intake'
           ? Field(els, 'intake', 'Новая задача', 'что сделать, зачем, что сдать, что нельзя', 'поставить', v => a.newTask(v), () => a.edit(''))
-          : ActionBar(els, 'ta-a', [<Button key="task-new" label="Новая задача" variant="primary" onPress={() => a.edit('intake')} />], 0, SPACE.section)
+          : ActionBar(els, 'ta-a', [Once(els, d, 'intake', <Button key="task-new" label="Новая задача" variant="primary" onPress={() => a.edit('intake')} />)], 0, SPACE.section)
       ) : null}
       {t.dir ? Para(els, 'tdir', `Папка задачи: ${t.dir}`, true, SPACE.section) : null}
     </Box>
@@ -423,7 +431,7 @@ function NeedsYou(els: Els, d: Data, a: Actions) {
           <Text wrap="wrap">{Tag(els, 'проблема  ', RED)}{p.text}</Text>
           {ActionBar(els, `pa-${p.key}`, [
             p.action ? <Button key={`pact-${p.key}`} label={p.action.label} variant="primary" onPress={() => p.action!.run()} /> : null,
-            <Button key={`pfix-${p.key}`} label="Попросить Claude" onPress={() => a.tellClaude(`Посмотри и исправь: ${p.text}`)} />,
+            Once(els, d, `fix:${p.key}`, <Button key={`pfix-${p.key}`} label="Попросить Claude" onPress={() => a.tellClaude(`Посмотри и исправь: ${p.text}`, `fix:${p.key}`)} />),
           ])}
         </Box>
       ))}
@@ -604,7 +612,7 @@ export function ReviewView(els: Els, d: Data, a: Actions) {
         : ActionBar(els, 'rem-a', [<Button key="rem-add" plain label="+ общее замечание" onPress={() => a.edit('general')} />])}
       {Rule(els, 'r-rv-final', 'Вердикт')}
       {Para(els, 'rv-hint', 'Всё выше уйдёт Claude одним сообщением.', true)}
-      {ActionBar(els, 'rv-final', [
+      {d.sent.includes('verdict') ? Para(els, 'rv-sent', '✓ Вердикт отправлен, Claude отвечает…', true) : ActionBar(els, 'rv-final', [
         <Button key="v-accept" label="Принять" variant="primary" onPress={() => a.sendVerdict('accept')} />,
         <Button key="v-fixes" label="Принять с правками" onPress={() => a.sendVerdict('fixes')} />,
         <Button key="v-return" label="Вернуть" onPress={() => a.sendVerdict('return')} />,
@@ -669,7 +677,7 @@ function Why(els: Els, d: Data, a: Actions) {
             {n.accepting ? <Text dimColor wrap="wrap">цена: {n.accepting.ru}</Text> : null}
             {ActionBar(els, `deca-${n.id}`, [
               <Button key={`decw-${n.id}`} label="Почему?" onPress={() => a.askAbout(`Почему принято решение «${n.title.ru}»? Какие были варианты и чем они хуже?`)} />,
-              !byUser && !old ? <Button key={`decu-${n.id}`} label="Отменить" onPress={() => a.undoDecision(n.id)} /> : null,
+              !byUser && !old ? Once(els, d, `undo:${n.id}`, <Button key={`decu-${n.id}`} label="Отменить" onPress={() => a.undoDecision(n.id)} />) : null,
               !old ? <Button key={`stale-${n.id}`} plain label="устарело" onPress={() => a.stale(n.id)} /> : null,
             ])}
           </Box>

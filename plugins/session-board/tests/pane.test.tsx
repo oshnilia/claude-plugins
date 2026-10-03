@@ -156,3 +156,12 @@ test('a chat message takes the open question cards down', async $ => {
   const brief = await $.tool.call({ tool: 'mcp__session-board__ledger_read', id: 'O1' })
   expect(brief.text).toContain('pending')
 })
+
+test('a board message button waits until Claude answers it', async $ => {
+  await $.tool.call(note({ kind: 'goal', title: 'Ship', title_ru: 'Выпустить доску' }))
+  const ui = await $.ui.mount({ plugin: 'session-board', surface: 'desktop', ...PANE })
+  await ui.press({ key: 'task-formal' })
+  expect(await ui.find({ key: 'task-formal' })).toBeUndefined()
+  expect(await ui.find({ text: /отправлено, Claude отвечает/ })).toBeDefined()
+  await ui.unmount()
+})

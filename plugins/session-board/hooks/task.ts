@@ -1,5 +1,5 @@
 import type { Authority, Ledger, LedgerNode, Phase, TaskSpec, Txt, Verdict } from '../types'
-import { txt, type Op } from './ledger'
+import { nextId, txt, type Op } from './ledger'
 
 // ---------- authority: what Claude may do alone, and what waits for the person ----------
 
@@ -93,6 +93,9 @@ export function slugify(s: string): string {
   return (i > 15 ? cut.slice(0, i) : base.slice(0, 40)).replace(/-+$/, '')
 }
 
+const gone = (n: LedgerNode) => ['superseded', 'dropped'].includes(n.status)
+const live = (n: LedgerNode) => !gone(n)
+
 /** Ops that put the brief into the ledger: one goal, its criteria, the rules. Old brief items are superseded. */
 export function briefOps(L: Ledger, input: TaskInput): Op[] {
   const ops: Op[] = []
@@ -100,17 +103,20 @@ export function briefOps(L: Ledger, input: TaskInput): Op[] {
     const fromBrief = n.evidence.some(e => e.ref === 'task brief')
     if ((n.kind === 'criterion' || n.kind === 'constraint') && fromBrief && n.status !== 'superseded') ops.push({ op: 'supersede', id: n.id })
   }
-  const goal = L.nodes.find(n => n.kind === 'goal' && n.evidence.some(e => e.ref === 'task brief'))
-    ?? L.nodes.find(n => n.kind === 'goal' && !['done', 'dropped', 'superseded'].includes(n.status))
-  const goalId = goal?.id ?? 'G1'
-  if (goal) ops.push({ op: 'update', id: goal.id, title: input.title, statement: input.goal })
-  else ops.push({ op: 'add', kind: 'goal', id: 'G1', title: input.title, statement: input.goal, evidence: [{ ref: 'task brief', type: 'user' }] })
+  // The brief's own goal, or the only goal of the work. With several goals the task gets a goal of its own:
+  // rewriting one of them would lose what it meant.
+  const active = L.nodes.filter(n => n.kind === 'goal' && !['done', 'dropped', 'superseded'].includes(n.status))
+  const goal = L.nodes.find(n => n.kind === 'goal' && !gone(n) && n.evidence.some(e => e.ref === 'task brief'))
+    ?? (active.length === 1 && L.nodes.filter(n => n.kind === 'goal').length === 1 ? active[0] : undefined)
+  const goalId = goal?.id ?? nextId(L.nodes, 'goal')
+  if (goal) ops.push({ op: 'update', id: goal.id, title: input.title, statement: input.goal, evidence: [...goal.evidence.filter(e => e.ref !== 'task brief'), { ref: 'task brief', type: 'user' }] })
+  else ops.push({ op: 'add', kind: 'goal', id: goalId, title: input.title, statement: input.goal, evidence: [{ ref: 'task brief', type: 'user' }] })
   for (const k of input.criteria) ops.push({ op: 'add', kind: 'criterion', parent: goalId, title: k, status: 'todo', evidence: [{ ref: 'task brief', type: 'user' }] })
   for (const c of input.rules) ops.push({ op: 'add', kind: 'constraint', title: c, statement: c, evidence: [{ ref: 'task brief', type: 'user' }] })
   return ops
 }
 
-const live = (n: LedgerNode) => !['superseded', 'dropped'].includes(n.status)
+
 
 export const criteriaOf = (L: Ledger) => L.nodes.filter(n => n.kind === 'criterion' && live(n))
 

@@ -4,7 +4,7 @@ import { applyOps, emptyLedger, nextId, parseOp, renderBrief } from '../hooks/le
 import { parseReply } from '../hooks/cartographer'
 import { deterministicOps } from '../hooks/extract'
 import { renderReport } from '../hooks/report'
-import { parseTaskInput, slugify, verdictMessage } from '../hooks/task'
+import { briefOps, parseTaskInput, slugify, verdictMessage } from '../hooks/task'
 
 test('applyOps adds, updates and never reuses ids', async () => {
   let L = emptyLedger('s1')
@@ -88,4 +88,19 @@ test('the report shows criteria, escapes text and embeds no external scripts', a
   expect(html).toContain('Выпустить &lt;доску&gt;')
   expect(html).toContain('Доказано 1 из 1 критериев')
   expect(html.includes('<script src')).toBe(false)
+})
+
+test('a brief over several goals adds its own goal and keeps theirs', async () => {
+  let L = emptyLedger('s1')
+  L = applyOps(L, [
+    { op: 'add', kind: 'goal', title: { en: 'Ship marketplace', ru: 'Маркетплейс' }, status: 'done' },
+    { op: 'add', kind: 'goal', title: { en: 'Build legible', ru: 'Сделать legible' } },
+    { op: 'add', kind: 'goal', title: { en: 'Build the board', ru: 'Сделать доску' } },
+  ], 1, 'cartographer').ledger
+  const input = parseTaskInput({ title: 'Ship v0.2', title_ru: 'Выпустить v0.2', goal: 'G', goal_ru: 'Ц', done_when: [{ en: 'CI green', ru: 'CI зелёный' }] })
+  if ('error' in input) throw new Error(input.error)
+  L = applyOps(L, briefOps(L, input), 2, 'claude').ledger
+  expect(L.nodes.find(n => n.id === 'G2')?.title.en).toBe('Build legible')
+  expect(L.nodes.find(n => n.id === 'G4')?.title.en).toBe('Ship v0.2')
+  expect(L.nodes.find(n => n.id === 'K1')?.parent).toBe('G4')
 })

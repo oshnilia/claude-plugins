@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Authority, BoardStatus, DiffView, Explain, Ledger, LedgerNode, LiveEvent, OpenTask, QA, Submission, TaskSpec, TurnCard } from '../types'
+import type { Authority, BoardStatus, DiffView, Explain, Ledger, LedgerNode, LiveEvent, OpenTask, QA, SentAction, Submission, TaskSpec, TurnCard } from '../types'
 import { askPrompt, cartographerPrompt, compactRules, parseReply, type TurnDigest } from './cartographer'
 import { deterministicOps, FILE_TOOLS, liveEvent, targetOf, toolLabel } from './extract'
 import { applyOps, cleanBrief, emptyLedger, parseOp, renderBrief, renderMarkdown, txt, upsertTurn, type Op } from './ledger'
@@ -32,6 +32,9 @@ const editing = atom({ plugin: 'session-board', key: 'editing' } as const, '')
 const greeted = atom({ plugin: 'session-board', key: 'greeted' } as const, '')
 const openTasks = atom({ plugin: 'session-board', key: 'openTasks' } as const, [] as OpenTask[])
 const policy = atom({ plugin: 'session-board', key: 'policy' } as const, 'normal' as Authority)
+const sent = atom({ plugin: 'session-board', key: 'sent' } as const, [] as SentAction[])
+// the project folder, fixed once per session: the shell's cwd moves with every cd
+const home = atom({ plugin: 'session-board', key: 'home' } as const, { sid: '', dir: '' })
 
 type Current = { n: number; ask: string; tools: Record<string, number>; files: Set<string>; paths: Set<string>; errors: string[]; ops: Op[]; touched: string[] }
 
@@ -63,6 +66,16 @@ async function iso($: EngineInterface) {
     // the test kit has no clock
     return new Date(0).toISOString()
   }
+}
+
+/** The session's project folder: the one fixed at its first start, else the git top level, else the cwd. */
+async function projectRoot($: EngineInterface, cwd: string): Promise<string> {
+  const saved = await read($, home)
+  if (saved.sid === sessionId && saved.dir) return saved.dir
+  const top = await $.process.run(['git', '-C', cwd, 'rev-parse', '--show-toplevel'])
+  const dir = top.exitCode === 0 && top.stdout.trim() ? top.stdout.trim() : cwd
+  await update($, home, () => ({ sid: sessionId, dir }))
+  return dir
 }
 
 async function ensureTasksRoot($: EngineInterface): Promise<string> {
@@ -172,6 +185,13 @@ function openBoard($: EngineInterface) {
 /** A message from the board into the session, as the person's own. */
 function say($: EngineInterface, text: string) {
   $.prompt.submit({ text, asUser: true }).catch(() => $.ui.toast('Не удалось отправить сообщение в сессию'))
+}
+
+/** Send once: a second press of the same action waits until Claude has answered the first. */
+async function sendOnce($: EngineInterface, key: string, text: string) {
+  if ((await read($, sent)).some(x => x.key === key)) return
+  await update($, sent, list => [...list, { key, text, started: false }])
+  say($, text)
 }
 
 async function addNote($: EngineInterface, text: string) {
@@ -374,7 +394,7 @@ async function startTask($: EngineInterface) {
   const at = await iso($)
   const L = await setTask($, t => ({ ...t, phase: 'work', started: t.started ?? at, ...(base && !t.base ? { base } : {}) }))
   await update($, editing, () => '')
-  if (L.task) say($, startMessage(L.task))
+  if (L.task) await sendOnce($, 'start', startMessage(L.task))
 }
 
 async function setAuthority($: EngineInterface, level: Authority) {
@@ -426,7 +446,7 @@ async function sendNotes($: EngineInterface) {
   if (!queued.length) return
   // clear first: the prompt.submit hook would attach them a second time
   await update($, notes, () => [])
-  say($, `Заметки с доски:\n${queued.map(n => `- ${n}`).join('\n')}`)
+  await sendOnce($, 'notes', `Заметки с доски:\n${queued.map(n => `- ${n}`).join('\n')}`)
 }
 
 async function sendVerdict($: EngineInterface, kind: VerdictKind) {
@@ -465,7 +485,7 @@ async function sendVerdict($: EngineInterface, kind: VerdictKind) {
   await update($, verdict, () => emptyVerdict())
   await update($, editing, () => '')
   if (kind === 'accept') await buildReport($)
-  say($, msg)
+  await sendOnce($, 'verdict', msg)
 }
 
 async function continueTask($: EngineInterface, dir: string) {
@@ -512,8 +532,8 @@ export const register: Register = (on, options) => {
   // ---------- session ----------
 
   on('session.start', async ($, e, next) => {
-    root = e.cwd
     sessionId = await $.session.id()
+    root = await projectRoot($, e.cwd)
     const legacy = `${root}/.claude/session-board/${sessionId}`
     const state = await read($, ledger)
     if (state.sid !== sessionId || (!state.nodes.length && !state.task)) {
@@ -582,7 +602,7 @@ export const register: Register = (on, options) => {
         type: 'object',
         required: ['title'],
         properties: {
-          id: { type: 'string', description: 'An existing node id to update instead of adding' },
+          id: { type: 'string', description: 'An existing node id to update instead of adding (status, title, statement, parent, evidence)' },
           kind: { type: 'string', enum: ['goal', 'constraint', 'question', 'hypothesis', 'task', 'finding', 'decision', 'open', 'assumption', 'risk'] },
           title: { type: 'string', description: '10 words or fewer, plain English' },
           title_ru: { type: 'string', description: 'The same title in plain Russian' },
@@ -689,6 +709,7 @@ export const register: Register = (on, options) => {
     await update($, live, () => [])
     const fromPerson = USER_ORIGINS.has(e.origin?.kind)
     const fromBoard = e.origin?.kind === 'plugin'
+    if (fromBoard) await update($, sent, list => list.map(x => (x.text === e.text ? { ...x, started: true } : x)))
     // The person wrote in the chat: their message probably answers the open questions. Take the cards down now;
     // the cartographer marks each one answered, or opens it again when the message did not answer it.
     if (fromPerson && current.ask) {
@@ -744,6 +765,7 @@ export const register: Register = (on, options) => {
     if (e.agentId || !current) return r
     const c = current
     current = null
+    await update($, sent, list => list.filter(x => !x.started))
     const toolCount = Object.values(c.tools).reduce((s, v) => s + v, 0)
     const ask = c.ask.replace(/\s+/g, ' ').slice(0, 240)
     const card: TurnCard = {
@@ -824,7 +846,7 @@ export const register: Register = (on, options) => {
       const n = L.nodes.find(x => x.id === id)
       if (!n) return reply(`No node ${id}.`)
       const op = parseOp({
-        op: 'update', id, status: s('status'),
+        op: 'update', id, status: s('status'), parent: s('parent'),
         ...(s('title') ? { title: { en: s('title'), ru: s('title_ru') ?? s('title') } } : {}),
         ...(s('statement') ? { statement: { en: s('statement'), ru: s('statement_ru') ?? s('statement') } } : {}),
         ...(evidence ? { evidence: [...n.evidence, ...evidence].slice(0, 8) } : {}),
@@ -957,6 +979,7 @@ export const register: Register = (on, options) => {
       editing: await read($, editing),
       openTasks: v === 'task' && !L.task ? await read($, openTasks) : [],
       policy: await read($, policy),
+      sent: (await read($, sent)).map(x => x.key),
       width: Math.max(24, e.props.bodyColumns - 1),
       ...(e.surface === 'desktop' ? { svg: $.ui.resolve(e).Svg } : {}),
     }
@@ -996,22 +1019,22 @@ export const register: Register = (on, options) => {
           const n = x.nodes.find(y => y.id === id)
           if (!n) return
           const alt = n.rejected?.length ? ` Альтернативы были: ${n.rejected.map(r => r.ru).join('; ')}.` : ''
-          say($, `Отмени своё решение «${n.title.ru}» (${id}). Предложи, что сделать вместо него, и спроси меня перед изменениями.${alt}`)
+          void sendOnce($, `undo:${id}`, `Отмени своё решение «${n.title.ru}» (${id}). Предложи, что сделать вместо него, и спроси меня перед изменениями.${alt}`)
         })
       },
       openFile: path => later(() => openPath($, path)),
       showDiff: path => later(() => toggleDiff($, path)),
-      tellClaude: text => say($, text),
+      tellClaude: (text, key) => later(() => sendOnce($, key ?? text.slice(0, 60), text)),
       newTask: text => {
         const t = text.trim()
         void update($, editing, () => '')
-        if (t) say($, `Новая задача: ${t}`)
+        if (t) later(() => sendOnce($, 'intake', `Новая задача: ${t}`))
       },
-      formalize: () => say($, 'Оформи текущую работу как задание через тул task: цель, результат, критерии «готово, когда», правила, вне рамок, полномочия. Все недостающие вопросы задай одним окном. Потом жди «Старт».'),
+      formalize: () => later(() => sendOnce($, 'formalize', 'Оформи текущую работу как задание через тул task: цель, результат, критерии «готово, когда», правила, вне рамок, полномочия. Все недостающие вопросы задай одним окном. Потом жди «Старт».')),
       fixTask: text => {
         const t = text.trim()
         void update($, editing, () => '')
-        if (t) say($, `Поправь задание: ${t}. Обнови бриф через тул task и жди «Старт».`)
+        if (t) later(() => sendOnce($, 'fix', `Поправь задание: ${t}. Обнови бриф через тул task и жди «Старт».`))
       },
       setAuthority: level => later(() => setAuthority($, level)),
       start: () => later(() => startTask($)),

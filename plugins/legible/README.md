@@ -20,4 +20,19 @@ python3 skills/plain-russian/scripts/ru_score.py --level 80 черновик.md
 ASD-STE100 is a trademark of ASD. This plugin is inspired by it, does not ship its dictionary and does not claim
 compliance. Get the standard free from https://www.asd-ste100.org/STE_downloads.html.
 
-Evals: `claude plugin eval plugins/legible` (makes real model calls).
+Evals: `claude plugin eval plugins/legible --no-publish` (makes real model calls; without `--no-publish` the report
+goes to claude.ai).
+
+## Measured (v0.1.1, 2026-10-03, Claude Code 2.1.286, 3 runs per arm, judge: haiku)
+
+| Case | With legible | Without | Δ |
+|---|---|---|---|
+| rewrite-plain-80 | 1.00 | 0.42 | +0.58 |
+| rewrite-plain-ru | 1.00 | 0.56 | +0.44 |
+| diagram-for-structure | 0.89 | 0.67 | +0.22 |
+| short-fact-stays-short | 1.00 | 1.00 | 0 |
+
+v0.1.0 scored 0.50 on rewrite-plain-80, the same as no plugin: the skill made sentences active by inventing who acts
+("the CI system sends a notification"), and its change list repeated the contractions it had removed. v0.1.1 keeps the
+receiver as the subject when the source names no actor, and outputs the rewrite only. The diagram and short-fact
+cases ran on v0.1.0; their skills did not change.
