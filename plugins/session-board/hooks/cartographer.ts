@@ -25,7 +25,7 @@ Write every "ru" text in plain technical Russian with the same rules: verbs, not
 
 Node kinds and id prefixes: goal G, constraint C (a rule the USER stated: "never/always/only"), question Q (a question
 the work must answer), hypothesis H (a guess to test), task T, finding F (a claim with evidence), decision D, open O
-(an open question), assumption S, risk R.
+(an open question), assumption S, risk R, criterion K (a "done when" check from the task brief).
 
 Rules:
 - Build a tree: goals at the top; questions and tasks under a goal; hypotheses under a question; findings and
@@ -38,15 +38,23 @@ Rules:
 - A decision uses a Y-statement: context, chosen, rejected[], accepting, by (user|claude).
 - Keep a PLAN: every active goal has 2 to 6 tasks (its steps) with status todo|doing|done; exactly one task is
   "doing" while work goes on. Update statuses every turn; add a task when new work starts.
+- Close what is finished: mark a task "done" in the turn its work ends (never leave a finished step "doing");
+  mark a goal "done" when all its tasks are done. When facts change, update the goal or finding text so it stays true.
+- Status "stale" means the user marked the item outdated on the board: rewrite it so it is true now, or close it.
+- Criteria (K) come from the task brief. Set a criterion "proven" only with evidence, "failed" when a check failed.
+  Do not add criteria yourself.
 - A refuted hypothesis states WHY in "statement" (the evidence that killed it).
 - An open question for the user (kind "open", "ask":"user") may carry "options": 2 or 3 short answers (max 4 words
   each, in Russian) that the board shows as buttons.
+- An open question with status "pending" means the user wrote in the chat after it was asked. If that message
+  answers it, set status "answered" and add the answer as a decision with by "user". If not, set status "open" again.
 - brief.keyLine, now, next and blockedBy must name ids that exist or that you add in this reply.
 - When the update covers several turns, also return "turns": [{"n":2,"ask":{"en","ru"},"did":{"en","ru"}}, ...]
   with one entry per covered turn, oldest first.
 - Add only what these turns changed. At most 8 ops (12 when several turns are covered). Skip trivial actions (reads, listings).
 - Return "brief" only when the top of the pyramid changed. brief.answer is the governing thought: what the
-  session does and the current answer, or "Not known yet. Best hypothesis: H2".
+  session does and the current answer, or "Not known yet. Best hypothesis: H2". Never put the next step in
+  brief.answer: the plan already shows the steps.
 
 Reply with ONE JSON object and nothing else:
 {"ops":[{"op":"add","kind":"finding","id":"F3","parent":"Q1","title":{"en":"","ru":""},"statement":{"en":"","ru":""},
@@ -134,7 +142,15 @@ ${brief}
 Question: ${question}`
 }
 
-export const COMPACT_RULES = `Write the summary as a session ledger in plain technical English:
-GOALS with status; CONSTRAINTS the user stated (keep them word for word); DECISIONS as Y-statements with who decided;
-FINDINGS with evidence (file:line, command, test); DEAD ENDS (refuted hypotheses - do not retry); OPEN questions and
-who must answer; FILES changed; NOW and NEXT step. Keep ids such as G1, D2, F3 when they exist.`
+/** Compaction instructions. The ledger in files is the source of truth: the summary must not retell it. */
+export function compactRules(brief: string, dir: string): string {
+  return `The session state lives in files${dir ? ` in ${dir} (task.md, ledger.md)` : ''} and in the ledger below.
+The ledger already holds the goals, the user's constraints, decisions, findings, dead ends and open questions, with ids.
+Do NOT restate them and do NOT invent new ids. Refer to ledger ids (G1, D2, F3) when you mention a ledger item.
+Write in plain technical English and summarize ONLY what the ledger lacks:
+- the work in progress: files being edited, half-done changes, commands and their last results;
+- details and preferences the user said in passing that are not in the ledger;
+- the last exchange and what Claude was about to do.
+
+${brief}`
+}

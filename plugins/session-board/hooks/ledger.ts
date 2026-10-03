@@ -2,12 +2,12 @@ import type { Brief, Evidence, Kind, Ledger, LedgerNode, Txt, TurnCard } from '.
 
 export const KINDS: readonly Kind[] = [
   'goal', 'constraint', 'question', 'hypothesis', 'task', 'action',
-  'finding', 'decision', 'open', 'assumption', 'risk',
+  'finding', 'decision', 'open', 'assumption', 'risk', 'criterion',
 ]
 
 export const PREFIX: Record<Kind, string> = {
   goal: 'G', constraint: 'C', question: 'Q', hypothesis: 'H', task: 'T', action: 'A',
-  finding: 'F', decision: 'D', open: 'O', assumption: 'S', risk: 'R',
+  finding: 'F', decision: 'D', open: 'O', assumption: 'S', risk: 'R', criterion: 'K',
 }
 
 const EVIDENCE_TYPES = ['test', 'code', 'doc', 'tool', 'user', 'inference'] as const
@@ -117,7 +117,7 @@ export function nextId(nodes: readonly LedgerNode[], kind: Kind): string {
 
 const DEFAULT_STATUS: Record<Kind, string> = {
   goal: 'active', constraint: 'active', question: 'open', hypothesis: 'untested', task: 'todo', action: 'ok',
-  finding: 'stated', decision: 'accepted', open: 'open', assumption: 'open', risk: 'open',
+  finding: 'stated', decision: 'accepted', open: 'open', assumption: 'open', risk: 'open', criterion: 'todo',
 }
 
 /** Apply ops in order. Returns the new ledger and the ids it touched. IDs are never reused. */
@@ -201,6 +201,16 @@ export function renderBrief(ledger: Ledger): string {
   const L: string[] = [`<session-ledger v1 sid=${ledger.sid} updated=${ledger.updated}>`]
   const b = ledger.brief
   const get = (id?: string) => (id ? ledger.nodes.find(n => n.id === id) : undefined)
+  const t = ledger.task
+  if (t) {
+    L.push(`TASK: ${t.title.en} [${t.phase}${t.round > 1 ? `, round ${t.round}` : ''}]${t.dir ? ` folder=${t.dir}` : ''}`)
+    if (t.goal.en) L.push(`TASK GOAL: ${t.goal.en}`)
+    if (t.result.en) L.push(`HAND IN: ${t.result.en}`)
+    L.push(`AUTHORITY: ${t.authority}`)
+    if (t.outOfScope.length) L.push(`OUT OF SCOPE: ${t.outOfScope.join(' | ')}`)
+  }
+  const crit = ledger.nodes.filter(n => n.kind === 'criterion' && n.status !== 'superseded')
+  if (crit.length) L.push(`DONE WHEN: ${crit.map(k => `${k.id} ${k.title.en} [${k.status}]`).join(' | ')}`)
   for (const g of ledger.nodes.filter(n => n.kind === 'goal' && open(n)).slice(0, 3)) L.push(`GOAL ${g.id}: ${g.statement?.en ?? g.title.en} [${g.status}]`)
   if (b) {
     L.push(`QUESTION: ${b.question.en}`)
@@ -223,7 +233,7 @@ export function renderBrief(ledger: Ledger): string {
     L.push(`OPEN: ${o.id} ${o.statement?.en ?? o.title.en} (ask ${o.ask ?? 'user'}; blocking=${o.blocking ? 'yes' : 'no'})`)
   }
   if (b && (b.now || b.next)) L.push(`NOW -> NEXT: ${[get(b.now), get(b.next)].map(n => (n ? `${n.id} ${n.title.en}` : '-')).join(' -> ')}`)
-  L.push(`DETAIL: call ledger_read with an id, or read .claude/session-board/${ledger.sid}/ledger.md`)
+  L.push(`DETAIL: call ledger_read with an id, or read ${t?.dir ? `${t.dir}/ledger.md` : 'the ledger with ledger_read section=all'}`)
   L.push('</session-ledger>')
   return L.join('\n')
 }

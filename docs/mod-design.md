@@ -67,3 +67,12 @@ Right: 2–3 short metrics (steps done/total, turn, decisions) that drop out as 
 the primary "нужен ты · N" only when something waits for the person, "спросить", "доска".
 - **Marks align with the first line**: rows with a mark and wrapping text need `alignItems="flex-start"`; desktop centers
   row items vertically by default, so a mark floats between the lines of a two-line item.
+
+## Module layout (v4)
+- JSX compiles against a global `h` in every module of the mod, not only in `register.tsx`: the views live in
+  `hooks/views.tsx` as plain functions `(els, data, actions) => tree`. The CI guard against a variable named `h`
+  covers every `.tsx` file.
+- `register.tsx` keeps the hooks, the atoms and every function that takes `$` (the static scan wants them top level).
+- Board actions run directly from `onPress` and catch their own errors; only the model fork for "Спросить" waits on
+  `$.clock.after`. The test kit has no clock, no `ui.open` and no model: helpers (`iso`, `openBoard`, `say`) fall back
+  or catch, so tests exercise the real code paths.

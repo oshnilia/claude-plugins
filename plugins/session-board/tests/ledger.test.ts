@@ -3,6 +3,8 @@ import { test, expect } from 'claude-code/testing'
 import { applyOps, emptyLedger, nextId, parseOp, renderBrief } from '../hooks/ledger'
 import { parseReply } from '../hooks/cartographer'
 import { deterministicOps } from '../hooks/extract'
+import { renderReport } from '../hooks/report'
+import { parseTaskInput, slugify, verdictMessage } from '../hooks/task'
 
 test('applyOps adds, updates and never reuses ids', async () => {
   let L = emptyLedger('s1')
@@ -48,4 +50,42 @@ test('AskUserQuestion answers become user decisions', async () => {
   expect(ops.length).toBe(1)
   const op = ops[0]!
   expect(op.op === 'add' && op.kind === 'decision' && op.by === 'user').toBe(true)
+})
+
+test('a task brief needs a title, a goal and criteria; slugs are short', async () => {
+  expect('error' in parseTaskInput({ title: 'X' })).toBe(true)
+  expect('error' in parseTaskInput({ title: 'X', goal: 'Y' })).toBe(true)
+  const ok = parseTaskInput({ title: 'Ship', title_ru: 'Выпустить', goal: 'G', goal_ru: 'Ц', done_when: [{ en: 'Tests pass', ru: 'Тесты проходят' }], authority: 'bold' })
+  if ('error' in ok) throw new Error(ok.error)
+  expect(ok.title.ru).toBe('Выпустить')
+  expect(ok.authority).toBe('bold')
+  expect(slugify('Ship the oshn plugin marketplace with two plugins and a board')).toBe('ship-the-oshn-plugin-marketplace-with')
+})
+
+test('the verdict message groups what is wrong and names new rules', async () => {
+  let L = emptyLedger('s1')
+  L = applyOps(L, [
+    { op: 'add', kind: 'goal', title: { en: 'Ship', ru: 'Выпустить' } },
+    { op: 'add', kind: 'criterion', parent: 'G1', title: { en: 'Tests pass', ru: 'Тесты проходят' } },
+    { op: 'add', kind: 'decision', by: 'claude', title: { en: 'Use Svg', ru: 'Взять Svg' } },
+  ], 1, 'claude').ledger
+  const msg = verdictMessage('return', L, { marks: { K1: 'no', D1: 'no' }, comments: { K1: 'два теста падают' }, general: ['пиши короче'], rules: ['пиши короче'] })
+  expect(msg).toContain('вернуть на доработку')
+  expect(msg).toContain('K1 Тесты проходят: два теста падают')
+  expect(msg).toContain('Отмени эти решения')
+  expect(msg).toContain('- пиши короче')
+  expect(msg).toContain('RULES.md')
+})
+
+test('the report shows criteria, escapes text and embeds no external scripts', async () => {
+  let L = emptyLedger('s1')
+  L = applyOps(L, [
+    { op: 'add', kind: 'goal', title: { en: 'Ship', ru: 'Выпустить <доску>' } },
+    { op: 'add', kind: 'criterion', parent: 'G1', status: 'proven', title: { en: 'Tests pass', ru: 'Тесты проходят' }, evidence: [{ ref: 'https://example.com/run/1', type: 'tool' }] },
+  ], 1, 'claude').ledger
+  const html = renderReport(L, { stat: '', files: [] }, '2026-10-03T10:00:00.000Z')
+  expect(html).toContain('Тесты проходят')
+  expect(html).toContain('Выпустить &lt;доску&gt;')
+  expect(html).toContain('Доказано 1 из 1 критериев')
+  expect(html.includes('<script src')).toBe(false)
 })

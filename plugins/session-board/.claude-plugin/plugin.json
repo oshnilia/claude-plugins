@@ -1,8 +1,8 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "session-board",
-  "version": "0.1.0",
-  "description": "Desktop mod: a live board next to the session - a pyramid summary, an outline map, turns, decisions and open questions - plus a session ledger that Claude reads back after compaction.",
+  "version": "0.2.0",
+  "description": "Desktop mod for people who run many sessions: a task brief with criteria and authority at the start, Claude works alone and calls you only for blockers, an acceptance screen and an HTML report at the end. The task folder keeps the ledger, so compaction loses nothing.",
   "author": {
     "name": "Ilia",
     "url": "https://github.com/oshnilia"
@@ -15,8 +15,9 @@
     "desktop",
     "session",
     "ledger",
-    "minto",
-    "observability"
+    "acceptance",
+    "autonomy",
+    "report"
   ],
   "types": "./types/index.d.ts",
   "userConfig": {
@@ -48,7 +49,7 @@
       "type": "boolean",
       "title": "Give Claude the ledger brief after compaction",
       "default": true,
-      "description": "After compaction, append the ledger brief so Claude keeps decisions, constraints and dead ends."
+      "description": "After compaction, append the ledger brief and the task folder path so Claude keeps decisions, constraints and dead ends."
     }
   }
 }

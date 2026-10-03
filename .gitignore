@@ -2,6 +2,7 @@
 node_modules/
 .claude/types/
 .claude/session-board/
+.claude/tasks/
 *.pdf
 __pycache__/
 plugins/*/tsconfig.json

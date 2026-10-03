@@ -13,7 +13,7 @@ Source of types: [`plugins/session-board/types/index.d.ts`](../plugins/session-b
 ## Nodes
 | kind | prefix | statuses |
 |---|---|---|
-| goal | G | active, done, dropped |
+| goal | G | active, done, dropped, stale |
 | constraint (a rule the user stated) | C | active, lifted |
 | question | Q | open, answered |
 | hypothesis | H | untested, supported, **refuted** (= dead end) |
@@ -21,9 +21,15 @@ Source of types: [`plugins/session-board/types/index.d.ts`](../plugins/session-b
 | action | A | ok, error |
 | finding | F | stated, superseded |
 | decision | D | accepted, proposed, superseded, rejected |
-| open (open question) | O | open, answered |
+| open (open question) | O | open, pending (the person wrote in the chat), answered |
 | assumption | S | open, verified, invalid |
-| risk | R | open |
+| risk | R | open, lifted |
+| criterion ("done when" from the task brief) | K | todo, proven, failed |
+
+Any node may be `stale`: the person marked it outdated on the board; the cartographer rewrites or closes it.
+A decision the person rejects at review becomes `disputed`.
+
+The ledger also holds `task` (the brief, phase, round, authority, folder; see [board-logic.md](board-logic.md)).
 
 Every node: `id` (stable, never reused), `kind`, `parent?`, `title {en, ru}` (≤10 words), `statement? {en, ru}`
 (one sentence, ≤25 words), `status`, `evidence[] {ref, type: test|code|doc|tool|user|inference}`, `turn`,
@@ -48,6 +54,11 @@ Recorded without a model on every main-thread turn; `ask/did` are rewritten by t
 Fixed order, about 400 tokens, appended after compaction:
 ```
 <session-ledger v1 sid=… updated=…>
+TASK: … [work] folder=/…/.claude/tasks/2026-10-03-<slug>
+TASK GOAL: …
+HAND IN: …
+AUTHORITY: normal
+DONE WHEN: K1 … [proven] | K2 … [todo]
 GOAL G1: … [active]
 QUESTION: …
 ANSWER: …
@@ -57,7 +68,7 @@ FOUND: F3 … [code: src/a.ts:42]
 DEAD ENDS - do not retry: H2 …
 OPEN: O1 … (ask user; blocking=no)
 NOW -> NEXT: T4 … -> T5 …
-DETAIL: call ledger_read with an id, or read .claude/session-board/<sid>/ledger.md
+DETAIL: call ledger_read with an id, or read <task folder>/ledger.md
 </session-ledger>
 ```
 Constraints and dead ends are first-class because compaction summaries lose them most often.

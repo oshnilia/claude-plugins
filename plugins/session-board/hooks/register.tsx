@@ -1,16 +1,24 @@
 import { atom, read, update } from 'claude-code'
-import type { ElementTable, EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
 
-import type { BoardStatus, DiffView, Explain, Kind, Ledger, LedgerNode, LiveEvent, QA, TurnCard } from '../types'
-import { askPrompt, cartographerPrompt, COMPACT_RULES, parseReply, type TurnDigest } from './cartographer'
+import type { Authority, BoardStatus, DiffView, Explain, Ledger, LedgerNode, LiveEvent, OpenTask, QA, Submission, TaskSpec, TurnCard } from '../types'
+import { askPrompt, cartographerPrompt, compactRules, parseReply, type TurnDigest } from './cartographer'
 import { deterministicOps, FILE_TOOLS, liveEvent, targetOf, toolLabel } from './extract'
-import { applyOps, cleanBrief, emptyLedger, parseOp, renderBrief, renderMarkdown, upsertTurn, type Op } from './ledger'
+import { applyOps, cleanBrief, emptyLedger, parseOp, renderBrief, renderMarkdown, txt, upsertTurn, type Op } from './ledger'
+import { renderReport, type ReportDiff } from './report'
+import {
+  AUTHORITY, briefOps, criteriaOf, emptyVerdict, isAuthority, parseTaskInput, protocol, renderTaskMd, slugify, startMessage,
+  VERDICT_LABEL, verdictMessage, type VerdictKind,
+} from './task'
+import { Band, Board, resolveView, type Actions, type AddKind, type Data } from './views'
 
 const PANE = 'board'
 const EXPLAIN_PANE = 'board-explain'
+const TITLE = 'Доска сессии'
 
 const ledger = atom({ plugin: 'session-board', key: 'ledger' } as const, emptyLedger(''))
-const view = atom({ plugin: 'session-board', key: 'view' } as const, 'gist')
+// '' follows the phase: the board opens on the screen the task needs now
+const view = atom({ plugin: 'session-board', key: 'view' } as const, '')
 const expanded = atom({ plugin: 'session-board', key: 'expanded' } as const, [] as string[])
 const status = atom({ plugin: 'session-board', key: 'status' } as const, { phase: 'idle', note: '', cacheRead: 0, output: 0, ms: 0 } as BoardStatus)
 const live = atom({ plugin: 'session-board', key: 'live' } as const, [] as LiveEvent[])
@@ -18,6 +26,12 @@ const qa = atom({ plugin: 'session-board', key: 'qa' } as const, [] as QA[])
 const answering = atom({ plugin: 'session-board', key: 'answering' } as const, '')
 const explain = atom({ plugin: 'session-board', key: 'explain' } as const, null as Explain | null)
 const diff = atom({ plugin: 'session-board', key: 'diff' } as const, null as DiffView | null)
+const verdict = atom({ plugin: 'session-board', key: 'verdict' } as const, emptyVerdict())
+const notes = atom({ plugin: 'session-board', key: 'notes' } as const, [] as string[])
+const editing = atom({ plugin: 'session-board', key: 'editing' } as const, '')
+const greeted = atom({ plugin: 'session-board', key: 'greeted' } as const, '')
+const openTasks = atom({ plugin: 'session-board', key: 'openTasks' } as const, [] as OpenTask[])
+const policy = atom({ plugin: 'session-board', key: 'policy' } as const, 'normal' as Authority)
 
 type Current = { n: number; ask: string; tools: Record<string, number>; files: Set<string>; paths: Set<string>; errors: string[]; ops: Op[]; touched: string[] }
 
@@ -25,23 +39,67 @@ const cfg = { updateMode: 'every-turn' as 'every-turn' | 'manual', minTools: 2, 
 let current: Current | null = null
 let busy = false
 let pending: TurnDigest | 'bootstrap' | null = null
-let dir = ''
+// the project folder and this session: set by session.start (never in tests, so tests write no files)
+let root = ''
+let sessionId = ''
+let projectRules = ''
+let pointerFor = ''
+
+// prompts the person sent: the composer, the phone bridge, the desktop app (an SDK host); never a plugin or a peer
+const USER_ORIGINS = new Set<string | undefined>(['composer', 'bridge', 'sdk', 'unclassified'])
+const GITIGNORE = '# session-board task folders stay out of git.\n# To keep a report: git add -f .claude/tasks/<task>/report.html\n*\n!.gitignore\n'
+
+const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x)
+const strs = (x: unknown, max = 12): string[] =>
+  Array.isArray(x) ? x.filter((s): s is string => typeof s === 'string' && !!s.trim()).map(s => s.trim().slice(0, 400)).slice(0, max) : []
+const gone = (n: LedgerNode) => n.status === 'superseded' || n.status === 'dropped'
+const reply = (text: string) => ({ result: text, text })
+const tasksRoot = () => (root ? `${root}/.claude/tasks` : '')
 
 async function iso($: EngineInterface) {
-  return new Date(await $.clock.now()).toISOString()
+  try {
+    return new Date(await $.clock.now()).toISOString()
+  } catch {
+    // the test kit has no clock
+    return new Date(0).toISOString()
+  }
 }
 
+async function ensureTasksRoot($: EngineInterface): Promise<string> {
+  const base = tasksRoot()
+  if (base && !(await $.fs.exists(`${base}/.gitignore`))) await $.fs.write(`${base}/.gitignore`, GITIGNORE)
+  return base
+}
+
+async function newTaskDir($: EngineInterface, titleEn: string): Promise<string> {
+  const base = await ensureTasksRoot($)
+  if (!base) return ''
+  const day = (await iso($)).slice(0, 10)
+  const slug = slugify(titleEn) || sessionId.slice(0, 8) || 'task'
+  let dir = `${base}/${day}-${slug}`
+  for (let i = 2; await $.fs.exists(dir); i++) dir = `${base}/${day}-${slug}-${i}`
+  return dir
+}
+
+/** The task folder is the source of truth: every change of the ledger lands there. */
 async function persist($: EngineInterface, L: Ledger, newOps: Op[]) {
+  const dir = L.task?.dir
   if (!dir) return
   await $.fs.write(`${dir}/ledger.json`, JSON.stringify(L, null, 2))
   await $.fs.write(`${dir}/brief.md`, renderBrief(L))
   await $.fs.write(`${dir}/ledger.md`, renderMarkdown(L, 'en'))
   await $.fs.write(`${dir}/board.ru.md`, renderMarkdown(L, 'ru'))
+  await $.fs.write(`${dir}/task.md`, renderTaskMd(L))
   if (newOps.length) {
     const prev = (await $.fs.exists(`${dir}/ledger.jsonl`)) ? await $.fs.read(`${dir}/ledger.jsonl`) : ''
     const at = await iso($)
     const lines = newOps.map(o => JSON.stringify({ at, ...o })).join('\n')
     await $.fs.write(`${dir}/ledger.jsonl`, `${prev}${prev && !prev.endsWith('\n') ? '\n' : ''}${lines}\n`)
+  }
+  // a pointer from this session to its task, so a resumed session finds the folder again
+  if (root && sessionId && pointerFor !== dir) {
+    await $.fs.write(`${root}/.claude/session-board/${sessionId}/task.json`, JSON.stringify({ dir }, null, 2))
+    pointerFor = dir
   }
 }
 
@@ -54,6 +112,70 @@ async function commit($: EngineInterface, ops: Op[], turn: number, author: 'clau
   })
   await persist($, L, ops)
   return touched
+}
+
+/** Change the task; a new phase sends the board to that phase's screen. */
+async function setTask($: EngineInterface, fn: (t: TaskSpec) => TaskSpec): Promise<Ledger> {
+  let moved = false
+  const L = await update($, ledger, prev => {
+    if (!prev.task) return prev
+    const t = fn(prev.task)
+    moved = t.phase !== prev.task.phase
+    return { ...prev, task: t }
+  })
+  await persist($, L, [])
+  if (moved) await update($, view, () => '')
+  return L
+}
+
+/** Work that started without an intake still gets a task folder once it has a goal. */
+async function ensureTask($: EngineInterface) {
+  const L0 = await read($, ledger)
+  if (L0.task || !root) return
+  const goal = L0.nodes.find(n => n.kind === 'goal' && !gone(n))
+  if (!goal) return
+  const dir = await newTaskDir($, goal.title.en)
+  if (!dir) return
+  const t: TaskSpec = {
+    title: goal.title, goal: goal.statement ?? goal.title, result: { en: '', ru: '' }, outOfScope: [], materials: [],
+    authority: await read($, policy), dir, created: await iso($), phase: 'work', round: 1, formal: false,
+  }
+  const L = await update($, ledger, prev => (prev.task ? prev : { ...prev, task: t }))
+  await persist($, L, [])
+  await refreshOpenTasks($)
+}
+
+async function refreshOpenTasks($: EngineInterface) {
+  const base = tasksRoot()
+  if (!base || !(await $.fs.exists(base))) return
+  const cur = (await read($, ledger)).task?.dir
+  const out: OpenTask[] = []
+  const dirs = (await $.fs.list(base)).filter(x => x.kind === 'dir').map(x => x.name).sort().reverse().slice(0, 30)
+  for (const name of dirs) {
+    const dir = `${base}/${name}`
+    if (dir === cur || !(await $.fs.exists(`${dir}/ledger.json`))) continue
+    try {
+      const saved = JSON.parse(await $.fs.read(`${dir}/ledger.json`)) as Ledger
+      if (saved.task && saved.task.phase !== 'accepted') out.push({ dir, title: saved.task.title.ru, phase: saved.task.phase, updated: saved.updated })
+    } catch {
+      // a broken ledger file: skip it
+    }
+  }
+  await update($, openTasks, () => out.slice(0, 8))
+}
+
+/** Open the board pane; a surface without panes (or the test kit) just keeps the state. */
+function openBoard($: EngineInterface) {
+  $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
+}
+
+/** A message from the board into the session, as the person's own. */
+function say($: EngineInterface, text: string) {
+  $.prompt.submit({ text, asUser: true }).catch(() => $.ui.toast('Не удалось отправить сообщение в сессию'))
+}
+
+async function addNote($: EngineInterface, text: string) {
+  await update($, notes, list => [...list, text].slice(-20))
 }
 
 // ---------- cartographer worker (runs on a timer, never inside a hook) ----------
@@ -79,20 +201,20 @@ async function work($: EngineInterface) {
       ? { n: lastN, ask: '(first map: cover the WHOLE conversation so far, up to 14 ops, and return a brief)', answer: '', tools: {}, files: [], errors: [] }
       : job
     let prompt = cartographerPrompt(L0, digest)
-    let reply = await $.model.fork({ prompt })
+    let r = await $.model.fork({ prompt })
     let cacheRead = 0
     let output = 0
     let parsed: ReturnType<typeof parseReply> | null = null
     for (let attempt = 0; attempt < 2; attempt++) {
-      if (!reply.isAnswered) break
-      cacheRead += reply.usage.cache_read_input_tokens ?? 0
-      output += reply.usage.output_tokens
-      parsed = parseReply(reply.text)
+      if (!r.isAnswered) break
+      cacheRead += r.usage.cache_read_input_tokens ?? 0
+      output += r.usage.output_tokens
+      parsed = parseReply(r.text)
       if (!('error' in parsed)) break
       prompt = `${prompt}\n\nYour previous reply failed: ${parsed.error}. Reply with the JSON object only.`
-      reply = await $.model.fork({ prompt })
+      r = await $.model.fork({ prompt })
     }
-    if (!reply.isAnswered) throw new Error(`fork: ${reply.reason}`)
+    if (!r.isAnswered) throw new Error(`fork: ${r.reason}`)
     if (!parsed || 'error' in parsed) throw new Error(parsed && 'error' in parsed ? parsed.error : 'no reply')
     const touched = await commit($, parsed.ops, digest.n || 1, 'cartographer')
     const brief = parsed.brief
@@ -116,9 +238,10 @@ async function work($: EngineInterface) {
           mapped: true,
         })
       }
-      return next
+      return cleanBrief(next).ledger
     })
     await persist($, L, [])
+    await ensureTask($)
     const ms = (await $.clock.now()) - started
     await update($, status, () => ({ phase: 'idle' as const, note: parsed && parsed.dropped ? `пропущено операций: ${parsed.dropped}` : '', cacheRead, output, ms }))
     $.ui.status(undefined)
@@ -141,8 +264,8 @@ async function runAsk($: EngineInterface, q: string) {
 }
 
 async function reportRenderError($: EngineInterface, viewName: string, msg: string) {
-  if (!dir) return
-  await $.fs.write(`${dir}/render-error.txt`, `${await iso($)} view=${viewName}\n${msg}\n`)
+  const dir = (await read($, ledger)).task?.dir || (root && sessionId ? `${root}/.claude/session-board/${sessionId}` : '')
+  if (dir) await $.fs.write(`${dir}/render-error.txt`, `${await iso($)} view=${viewName}\n${msg}\n`)
 }
 
 async function openPath($: EngineInterface, path: string) {
@@ -170,12 +293,12 @@ async function toggleDiff($: EngineInterface, path: string) {
 
 /** One digest for every turn that never reached the map, ending with `latest` when given. */
 function catchUpDigest(L: Ledger, latest?: TurnDigest): TurnDigest | null {
-  const pending = L.turns.filter(t => !t.mapped && t.n !== latest?.n)
-  if (!pending.length) return latest ?? null
+  const behind = L.turns.filter(t => !t.mapped && t.n !== latest?.n)
+  if (!behind.length) return latest ?? null
   const tools: Record<string, number> = { ...(latest?.tools ?? {}) }
-  for (const t of pending) for (const [k, v] of Object.entries(t.tools)) tools[k] = (tools[k] ?? 0) + v
-  const files = [...new Set([...pending.flatMap(t => t.files), ...(latest?.files ?? [])])]
-  const covers = [...pending.map(t => ({ n: t.n, ask: t.ask.en })), ...(latest ? [{ n: latest.n, ask: latest.ask }] : [])]
+  for (const t of behind) for (const [k, v] of Object.entries(t.tools)) tools[k] = (tools[k] ?? 0) + v
+  const files = [...new Set([...behind.flatMap(t => t.files), ...(latest?.files ?? [])])]
+  const covers = [...behind.map(t => ({ n: t.n, ask: t.ask.en })), ...(latest ? [{ n: latest.n, ask: latest.ask }] : [])]
   const last = covers[covers.length - 1]!
   return { n: last.n, ask: last.ask, answer: latest?.answer ?? '', tools, files, errors: latest?.errors ?? [], covers }
 }
@@ -185,479 +308,196 @@ function lastDigest(L: Ledger): TurnDigest {
   return { n: t?.n ?? 1, ask: t?.ask.en ?? '', answer: '', tools: t?.tools ?? {}, files: t?.files ?? [], errors: [] }
 }
 
-// ---------- views (kept in this file: the engine gives JSX its h only here) ----------
-// Layout rules: docs/mod-design.md. Width comes from e.props.bodyColumns. Rows are a fixed gutter
-// (flexShrink 0) plus a growing, wrapping body (flexGrow 1, minWidth 0). Sections start with a dim rule.
+// ---------- the report ----------
 
-type Els = Pick<ElementTable<'desktop'>, 'Box' | 'Text' | 'Button' | 'Markdown' | 'Input' | 'Code'>
-
-type Actions = {
-  setView: (v: string) => void
-  toggle: (id: string) => void
-  refresh: () => void
-  startAnswer: (id: string) => void
-  submitAnswer: (id: string, text: string) => void
-  ask: (q: string) => void
-  askAbout: (q: string) => void
-  undoDecision: (id: string) => void
-  openFile: (path: string) => void
-  showDiff: (path: string) => void
-  tellClaude: (text: string) => void
-}
-
-type SvgCtor = ElementTable<'desktop'>['Svg']
-
-type Data = {
-  svg?: SvgCtor
-  ledger: Ledger
-  view: string
-  expanded: string[]
-  status: BoardStatus
-  live: LiveEvent[]
-  qa: QA[]
-  answering: string
-  diff: DiffView | null
-  width: number
-}
-
-const VIEWS = [
-  { id: 'now', label: 'Сейчас', key: '1' },
-  { id: 'why', label: 'Почему', key: '2' },
-  { id: 'history', label: 'История', key: '3' },
-  { id: 'ask', label: 'Спросить', key: '4' },
-] as const
-
-const COLOR: Record<Kind, string> = {
-  goal: '#5b8cff', constraint: '#b57bff', question: '#8f7bff', hypothesis: '#8b93a1', task: '#34b27b', action: '#8b93a1',
-  finding: '#e0a526', decision: '#ef6b55', open: '#ff9330', assumption: '#8b93a1', risk: '#ff6b6b',
-}
-const RED = '#ff6b6b'
-const ORANGE = '#ff9330'
-const GREEN = '#34b27b'
-const BLUE = '#5b8cff'
-
-const LABEL: Record<Kind, string> = {
-  goal: 'цель', constraint: 'правило', question: 'вопрос', hypothesis: 'гипотеза', task: 'шаг', action: 'действие',
-  finding: 'находка', decision: 'решение', open: 'вопрос', assumption: 'допущение', risk: 'риск',
-}
-
-const isClosed = (n: LedgerNode) => ['done', 'dropped', 'superseded', 'refuted', 'answered', 'lifted', 'rejected'].includes(n.status)
-const kidsOf = (L: Ledger, id: string) => L.nodes.filter(n => n.parent === id)
-
-/** Vertical rhythm, in rows. Desktop needs explicit room: nothing adds it for us. */
-const SPACE = { section: 2, item: 1 } as const
-
-/** A section heading. No box-drawing lines: desktop draws text in a proportional font, so lines of
- *  repeated glyphs never fit the width and wrap. */
-function Rule(els: Els, key: string, title: string, _width: number, count?: number) {
-  const { Box, Text } = els
-  return (
-    <Box key={key} marginTop={SPACE.section}>
-      <Text wrap="truncate-end"><Text bold>{title}</Text>{count !== undefined ? <Text dimColor>{`  ${count}`}</Text> : null}</Text>
-    </Box>
-  )
-}
-
-/** Fixed gutter on the left, growing wrapping body on the right. The mark aligns with the FIRST line of the
- *  body: desktop centers row items vertically by default, which floats a mark between the lines of long text. */
-function Row(els: Els, key: string, gutterWidth: number, gutter: unknown, body: unknown, indent = 0) {
-  const { Box } = els
-  return (
-    <Box key={key} flexDirection="row" alignItems="flex-start" paddingLeft={indent}>
-      <Box width={gutterWidth} flexShrink={0}>{gutter as never}</Box>
-      <Box flexGrow={1} flexShrink={1} minWidth={0}>{body as never}</Box>
-    </Box>
-  )
-}
-
-/** Truncating text on the left, a pinned tail on the right. */
-function Split(els: Els, key: string, left: unknown, right: unknown) {
-  const { Box } = els
-  return (
-    <Box key={key} flexDirection="row" justifyContent="space-between" columnGap={2}>
-      <Box flexShrink={1} minWidth={0}>{left as never}</Box>
-      <Box flexShrink={0}>{right as never}</Box>
-    </Box>
-  )
-}
-
-/** A row of action buttons that wraps on narrow panes. */
-function ActionBar(els: Els, key: string, buttons: unknown[], indent = 0, top: number = SPACE.item) {
-  const { Box } = els
-  return (
-    <Box key={key} flexDirection="row" flexWrap="wrap" columnGap={2} rowGap={SPACE.item} paddingLeft={indent} marginTop={top}>
-      {buttons.filter(Boolean) as never}
-    </Box>
-  )
-}
-
-function Tag(els: Els, label: string, color: string) {
-  const { Text } = els
-  return <Text color={color} bold>{label}</Text>
-}
-
-// ---------- header ----------
-
-function Header(els: Els, d: Data, a: Actions) {
-  const { Box, Text, Button } = els
-  const s = d.status
-  const note =
-    s.phase === 'mapping' ? `⟳ ставлю на карту: ${s.note.includes(',') ? 'ходы' : s.note === 'вся сессия' ? '' : 'ход'} ${s.note}`
-      : s.phase === 'error' ? `⚠ карта не обновилась`
-        : s.ms ? `карта обновлена · ход ${d.ledger.turns.at(-1)?.n ?? 0}`
-          : d.ledger.turns.length ? `ходов: ${d.ledger.turns.length}` : 'ждёт первого хода'
-  return (
-    <Box flexDirection="column">
-      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {VIEWS.map(v => (
-          <Button key={`view-${v.id}`} plain label={v.label} hotkey={v.key} dimColor={d.view !== v.id} onPress={() => a.setView(v.id)} />
-        ))}
-      </Box>
-      <Box marginTop={SPACE.item}>
-        {Split(els, 'status', <Text dimColor wrap="truncate-end">{note}</Text>,
-          <Button key="refresh" plain label="↻ обновить" dimColor onPress={() => a.refresh()} />)}
-      </Box>
-    </Box>
-  )
-}
-
-// ---------- 1. now: what needs you, the main point, progress ----------
-
-type Problem = { key: string; text: string; action?: { label: string; run: () => void } }
-
-function problemsOf(d: Data, a: Actions): Problem[] {
-  const out: Problem[] = []
-  const L = d.ledger
-  if (d.status.phase === 'error') out.push({ key: 'carto', text: `Карта не обновилась: ${d.status.note}`, action: { label: 'Пересобрать', run: a.refresh } })
-  const last = L.turns.at(-1)
-  if (last && last.errors > 0) {
-    out.push({ key: 'errors', text: `В ходе ${last.n} было ошибок тулов: ${last.errors}`, action: { label: 'Что сломалось?', run: () => a.askAbout(`Что сломалось в ходе ${last.n} и чем это грозит?`) } })
+async function collectDiff($: EngineInterface, L: Ledger): Promise<ReportDiff> {
+  const out: ReportDiff = { stat: '', files: [] }
+  if (!root) return out
+  const git = (args: string[]) => $.process.run(['git', '-C', root, ...args])
+  const paths = [...new Set(L.turns.flatMap(t => t.paths ?? []))].filter(p => !p.includes('/.claude/tasks/'))
+  const inside = paths.filter(p => p.startsWith(`${root}/`))
+  const outside = paths.filter(p => !p.startsWith(`${root}/`))
+  const rel = (p: string) => (p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p.replace(/^\/Users\/[^/]+\//, '~/'))
+  if (inside.length && (await git(['rev-parse', '--is-inside-work-tree'])).exitCode === 0) {
+    const ref = L.task?.base ?? 'HEAD'
+    out.stat = (await git(['diff', '--stat', '--no-color', ref, '--', ...inside])).stdout.trim().slice(0, 4000)
+    let budget = 300_000
+    for (const p of inside.slice(0, 40)) {
+      if (budget <= 0) break
+      if ((await git(['ls-files', '--error-unmatch', p])).exitCode === 0) {
+        const r = await git(['diff', '--no-color', ref, '--', p])
+        const patch = r.stdout.split('\n').filter(l => !/^(diff --git|index |--- |\+\+\+ )/.test(l)).join('\n').trim()
+        if (patch) {
+          out.files.push({ path: rel(p), patch: patch.slice(0, Math.min(60_000, budget)), isNew: false })
+          budget -= patch.length
+        }
+      } else if (await $.fs.exists(p)) {
+        const text = (await $.fs.read(p)).split('\n').slice(0, 200).map(l => `+${l}`).join('\n')
+        out.files.push({ path: rel(p), patch: text, isNew: true })
+        budget -= text.length
+      }
+    }
   }
-  const unmapped = L.turns.filter(t => !t.mapped)
-  // while the cartographer runs, unmapped turns are being handled: not a problem to show
-  if (unmapped.length >= 2 && d.status.phase !== 'mapping') out.push({ key: 'unmapped', text: `Ходы ${unmapped.map(t => t.n).join(', ')} не попали на карту`, action: { label: 'Пересобрать', run: a.refresh } })
+  for (const p of outside.slice(0, 20)) out.files.push({ path: rel(p), patch: '(файл вне репозитория: diff нет)', isNew: false })
   return out
 }
 
-function NeedsYou(els: Els, d: Data, a: Actions) {
-  const { Box, Text, Button, Input } = els
-  const qs = d.ledger.nodes.filter(n => n.kind === 'open' && !isClosed(n) && (n.ask ?? 'user') === 'user')
-  const problems = problemsOf(d, a)
-  if (!qs.length && !problems.length) return null
-  return (
-    <Box flexDirection="column">
-      {Rule(els, 'r-needs', 'Нужен ты', d.width, qs.length + problems.length)}
-      {qs.map(n => (
-        <Box key={`q-${n.id}`} flexDirection="column" borderStyle="round" borderColor={ORANGE} paddingX={1} marginTop={1}>
-          <Text wrap="wrap">{Tag(els, 'вопрос  ', ORANGE)}<Text bold>{n.title.ru}</Text></Text>
-          {n.statement ? <Text dimColor wrap="wrap">{n.statement.ru}</Text> : null}
-          {d.answering === n.id ? (
-            <Input key={`ans-${n.id}`} label="Ответ" placeholder="уйдёт в сессию как твоё сообщение" submitLabel="отправить" autoFocus
-              onSubmit={v => a.submitAnswer(n.id, v)} />
-          ) : (
-            ActionBar(els, `qa-${n.id}`, [
-              ...(n.options ?? []).map((o, i) => (
-                <Button key={`opt-${n.id}-${i}`} label={o} variant={i === 0 ? 'primary' : 'secondary'} onPress={() => a.submitAnswer(n.id, o)} />
-              )),
-              <Button key={`ansb-${n.id}`} label="Ответить текстом" variant={n.options?.length ? 'secondary' : 'primary'} onPress={() => a.startAnswer(n.id)} />,
-              <Button key={`qwhy-${n.id}`} plain label="зачем это?" onPress={() => a.askAbout(`Зачем ты спрашиваешь: «${n.title.ru}»? Что изменится от ответа?`)} />,
-            ])
-          )}
-        </Box>
-      ))}
-      {problems.map(p => (
-        <Box key={`p-${p.key}`} flexDirection="column" borderStyle="round" borderColor={RED} paddingX={1} marginTop={1}>
-          <Text wrap="wrap">{Tag(els, 'проблема  ', RED)}{p.text}</Text>
-          {ActionBar(els, `pa-${p.key}`, [
-            p.action ? <Button key={`pact-${p.key}`} label={p.action.label} variant="primary" onPress={() => p.action!.run()} /> : null,
-            <Button key={`pfix-${p.key}`} label="Попросить Claude" onPress={() => a.tellClaude(`Посмотри и исправь: ${p.text}`)} />,
-          ])}
-        </Box>
-      ))}
-    </Box>
-  )
+async function buildReport($: EngineInterface): Promise<string> {
+  const L = await read($, ledger)
+  const dir = L.task?.dir
+  if (!dir) return ''
+  const html = renderReport(L, await collectDiff($, L), await iso($))
+  await $.fs.write(`${dir}/report.html`, html)
+  return `${dir}/report.html`
 }
 
-function Bar(els: Els, key: string, done: number, total: number, width: number, svg?: SvgCtor) {
-  const { Text } = els
-  const frac = total ? done / total : 0
-  if (svg) {
-    // drawn as an image at the pane's width: 1000 x 14 scales to a thin rounded bar
-    const fill = Math.round(1000 * frac)
-    // 1000 x 40 with the bar in the middle: the empty bands above and below are the bar's own breathing room
-    const source = `<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="40" viewBox="0 0 1000 40">` +
-      `<rect y="15" width="1000" height="10" rx="5" fill="#8b93a1" fill-opacity=".28"/>` +
-      (fill ? `<rect y="15" width="${Math.max(10, fill)}" height="10" rx="5" fill="${GREEN}"/>` : '') + `</svg>`
-    return svg({ source, alt: `готово ${done} из ${total}` })
+async function openReport($: EngineInterface) {
+  const dir = (await read($, ledger)).task?.dir
+  if (!dir) {
+    $.ui.toast('У задачи ещё нет папки: отчёт не собрать')
+    return
   }
-  const w = Math.max(8, width)
-  const n = Math.round(frac * w)
-  return (
-    <Text key={key} wrap="truncate-end">
-      <Text color={GREEN}>{'━'.repeat(n)}</Text>
-      <Text dimColor>{'━'.repeat(w - n)}</Text>
-    </Text>
-  )
+  const path = (await $.fs.exists(`${dir}/report.html`)) ? `${dir}/report.html` : await buildReport($)
+  if (path) await openPath($, path)
 }
 
-function Progress(els: Els, d: Data, a: Actions) {
-  const { Box, Text, Button } = els
-  const L = d.ledger
-  const goals = L.nodes.filter(n => n.kind === 'goal' && n.status !== 'dropped')
-  if (!goals.length) return null
-  return (
-    <Box flexDirection="column">
-      {Rule(els, 'r-progress', 'Прогресс', d.width)}
-      {goals.map((g, gi) => {
-        const steps = kidsOf(L, g.id).filter(n => n.kind === 'task')
-        const done = steps.filter(s => s.status === 'done').length
-        const open = d.expanded.includes(g.id) || steps.some(s => s.status === 'doing')
-        return (
-          <Box key={`g-${g.id}`} flexDirection="column" marginTop={gi === 0 ? SPACE.item : SPACE.section}>
-            {Split(els, `gh-${g.id}`, <Text bold wrap="truncate-end">{g.title.ru}</Text>,
-              <Text dimColor>{steps.length ? `${done} из ${steps.length}` : g.status === 'done' ? 'готово' : 'без шагов'}</Text>)}
-            {steps.length ? Bar(els, `gb-${g.id}`, done, steps.length, d.width - 2, d.svg) : null}
-            {open && steps.length ? (
-              <Box flexDirection="column" marginTop={SPACE.item}>
-                {steps.map(s => Row(els, `st-${s.id}`, 3,
-                  <Text color={s.status === 'done' ? GREEN : s.status === 'doing' ? BLUE : undefined} dimColor={s.status === 'todo'}>
-                    {s.status === 'done' ? '✓' : s.status === 'doing' ? '●' : '○'}
-                  </Text>,
-                  <Text wrap="wrap" dimColor={s.status === 'done'} bold={s.status === 'doing'}>{s.title.ru}{s.status === 'doing' ? <Text dimColor>  — сейчас</Text> : null}</Text>))}
-              </Box>
-            ) : null}
-            {ActionBar(els, `ga-${g.id}`, [
-              steps.length ? <Button key={`gx-${g.id}`} plain label={open ? 'свернуть шаги' : `шаги (${steps.length})`} onPress={() => a.toggle(g.id)} /> : null,
-              <Button key={`gq-${g.id}`} plain label="что осталось?" onPress={() => a.askAbout(`Что осталось сделать по цели «${g.title.ru}» и что может помешать?`)} />,
-            ])}
-          </Box>
-        )
-      })}
-    </Box>
-  )
-}
+// ---------- what the person does on the board ----------
 
-function Now(els: Els, d: Data, a: Actions) {
-  const { Box, Text } = els
-  const L = d.ledger
-  const b = L.brief
-  const get = (id?: string) => (id ? L.nodes.find(n => n.id === id) : undefined)
-  const now = get(b?.now) ?? L.nodes.find(n => n.kind === 'task' && n.status === 'doing')
-  const next = get(b?.next) ?? L.nodes.find(n => n.kind === 'task' && n.status === 'todo')
-  return (
-    <Box flexDirection="column">
-      {NeedsYou(els, d, a)}
-      {Rule(els, 'r-main', 'Главное', d.width)}
-      {b ? (
-        <Box flexDirection="column" marginTop={1}>
-          <Text bold wrap="wrap">{b.answer.ru}</Text>
-          <Box marginTop={SPACE.item}><Text dimColor wrap="wrap">Вопрос сессии: {b.question.ru}</Text></Box>
-        </Box>
-      ) : (
-        <Box flexDirection="column" marginTop={1}>
-          <Text wrap="wrap">Карты пока нет. Она соберётся после первого хода с работой.</Text>
-          <Text dimColor wrap="wrap">Не хочешь ждать — нажми «↻ обновить».</Text>
-        </Box>
-      )}
-      {Progress(els, d, a)}
-      {(now || next) && !L.nodes.some(n => n.kind === 'task') ? (
-        <Box flexDirection="column">
-          {Rule(els, 'r-next', 'Сейчас → дальше', d.width)}
-          {now ? Row(els, 'now-row', 3, <Text color={BLUE}>●</Text>, <Text wrap="wrap" bold>{now.title.ru}</Text>) : null}
-          {next ? Row(els, 'next-row', 3, <Text dimColor>○</Text>, <Text wrap="wrap" dimColor>дальше: {next.title.ru}</Text>) : null}
-        </Box>
-      ) : null}
-    </Box>
-  )
-}
-
-// ---------- 2. why: question -> what we tried -> decision; decisions; rules ----------
-
-function chainMark(n: LedgerNode): { mark: string; color: string; label: string } {
-  if (n.kind === 'hypothesis' && n.status === 'refuted') return { mark: '✗', color: COLOR.hypothesis, label: 'тупик' }
-  if (n.kind === 'hypothesis' && n.status === 'supported') return { mark: '✓', color: GREEN, label: 'подтвердилось' }
-  if (n.kind === 'hypothesis') return { mark: '?', color: COLOR.finding, label: 'проверяем' }
-  if (n.kind === 'decision') return { mark: '◆', color: COLOR.decision, label: 'решение' }
-  if (n.kind === 'finding') return { mark: '★', color: COLOR.finding, label: 'находка' }
-  return { mark: '•', color: COLOR[n.kind], label: LABEL[n.kind] }
-}
-
-function Why(els: Els, d: Data, a: Actions) {
-  const { Box, Text, Button } = els
-  const L = d.ledger
-  const questions = L.nodes.filter(n => n.kind === 'question')
-  const decisions = L.nodes.filter(n => n.kind === 'decision')
-  const rules = L.nodes.filter(n => n.kind === 'constraint' && !isClosed(n))
-  return (
-    <Box flexDirection="column">
-      {questions.length ? Rule(els, 'r-chains', 'Что пробовали', d.width, questions.length) : null}
-      {[...questions].reverse().map((q, qi) => {
-        const kids = kidsOf(L, q.id)
-        return (
-          <Box key={`ch-${q.id}`} flexDirection="column" marginTop={qi === 0 ? SPACE.item : SPACE.section}>
-            <Text wrap="wrap">{Tag(els, 'вопрос  ', COLOR.question)}<Text bold>{q.title.ru}</Text>{q.status === 'answered' ? <Text dimColor>  · закрыт</Text> : null}</Text>
-            {kids.map((k, i) => {
-              const m = chainMark(k)
-              return (
-                <Box key={`chk-${k.id}`} flexDirection="column" paddingLeft={2} marginTop={SPACE.item}>
-                  {Row(els, `chr-${k.id}`, 2, <Text color={m.color} bold>{m.mark}</Text>, (
-                    <Text wrap="wrap" dimColor={k.status === 'refuted'}>
-                      <Text color={m.color} bold>{m.label}  </Text>
-                      <Text strikethrough={k.status === 'refuted'}>{k.title.ru}</Text>
-                    </Text>
-                  ))}
-                  {k.statement ? Row(els, `chs-${k.id}`, 2, <Text> </Text>, <Text dimColor wrap="wrap">{k.statement.ru}</Text>) : null}
-                </Box>
-              )
-            })}
-            {ActionBar(els, `cha-${q.id}`, [
-              <Button key={`chq-${q.id}`} label="Почему так?" onPress={() => a.askAbout(`Объясни цепочку по вопросу «${q.title.ru}»: что пробовали, почему отказались, на чём остановились.`)} />,
-            ], 2)}
-          </Box>
-        )
-      })}
-      {Rule(els, 'r-dec', 'Решения', d.width, decisions.length)}
-      {!decisions.length ? <Text dimColor>Решений пока нет.</Text> : null}
-      {[...decisions].reverse().map((n, di) => {
-        const gone = n.status === 'superseded'
-        const byUser = n.by === 'user'
-        return (
-          <Box key={`dec-${n.id}`} flexDirection="column" marginTop={di === 0 ? SPACE.item : SPACE.section}>
-            <Text wrap="wrap" dimColor={gone}>
-              {Tag(els, byUser ? 'решил ты  ' : n.by === 'claude' ? 'решил Claude  ' : 'решение  ', byUser ? COLOR.decision : BLUE)}
-              <Text bold strikethrough={gone}>{n.title.ru}</Text>
-            </Text>
-            {n.rejected?.length ? <Text dimColor wrap="wrap">отвергли: {n.rejected.map(r => r.ru).join('; ')}</Text> : null}
-            {n.accepting ? <Text dimColor wrap="wrap">цена: {n.accepting.ru}</Text> : null}
-            {ActionBar(els, `deca-${n.id}`, [
-              <Button key={`decw-${n.id}`} label="Почему?" onPress={() => a.askAbout(`Почему принято решение «${n.title.ru}»? Какие были варианты и чем они хуже?`)} />,
-              !byUser && !gone ? <Button key={`decu-${n.id}`} label="Отменить" onPress={() => a.undoDecision(n.id)} /> : null,
-              <Button key={`decr-${n.id}`} plain label="чем рискуем?" onPress={() => a.askAbout(`Чем рискуем из-за решения «${n.title.ru}»?`)} />,
-            ])}
-          </Box>
-        )
-      })}
-      {rules.length ? Rule(els, 'r-rules', 'Твои правила', d.width, rules.length) : null}
-      {rules.map(c => Row(els, `rule-${c.id}`, 3, <Text color={COLOR.constraint}>⚑</Text>, <Text wrap="wrap">{c.statement?.ru ?? c.title.ru}</Text>))}
-    </Box>
-  )
-}
-
-// ---------- 3. history: turns and files ----------
-
-function Live(els: Els, d: Data) {
-  const { Box, Text } = els
-  if (!d.live.length) return null
-  return (
-    <Box flexDirection="column">
-      {Rule(els, 'r-live', 'Сейчас в ходе', d.width)}
-      {d.live.slice(-6).map((ev, i) => Row(els, `live-${i}`, 3,
-        <Text color={ev.ok === false ? RED : ev.ok ? GREEN : BLUE}>{ev.ok === null ? '⟳' : ev.ok ? '✓' : '✗'}</Text>,
-        <Text wrap="truncate-end" dimColor={ev.ok !== null}>{ev.tool}  <Text dimColor>{ev.target}</Text></Text>))}
-    </Box>
-  )
-}
-
-function History(els: Els, d: Data, a: Actions) {
-  const { Box, Text, Button, Code } = els
-  const L = d.ledger
-  const turns = [...L.turns].reverse().slice(0, 12)
-  // files: path -> turns that touched it
-  const files = new Map<string, { label: string; turns: number[] }>()
-  for (const t of L.turns) {
-    const paths = t.paths ?? t.files
-    paths.forEach((p, i) => {
-      const f = files.get(p) ?? { label: t.files[i] ?? p, turns: [] }
-      f.turns.push(t.n)
-      files.set(p, f)
-    })
+async function startTask($: EngineInterface) {
+  const t0 = (await read($, ledger)).task
+  if (!t0) return
+  let base: string | undefined
+  if (root) {
+    const r = await $.process.run(['git', '-C', root, 'rev-parse', 'HEAD'])
+    if (r.exitCode === 0) base = r.stdout.trim()
   }
-  const lastN = L.turns.at(-1)?.n ?? 0
-  const window = Array.from({ length: Math.min(8, lastN) }, (_, i) => lastN - Math.min(8, lastN) + 1 + i)
-  const fileRows = [...files.entries()].sort((x, y) => Math.max(...y[1].turns) - Math.max(...x[1].turns)).slice(0, 15)
-  return (
-    <Box flexDirection="column">
-      {Live(els, d)}
-      {Rule(els, 'r-turns', 'Ходы', d.width, L.turns.length)}
-      {!turns.length ? <Text dimColor>Ходов пока нет.</Text> : null}
-      {turns.map((t, ti) => {
-        const made = t.nodes.map(id => L.nodes.find(n => n.id === id)).filter((n): n is LedgerNode => !!n)
-        const tools = Object.values(t.tools).reduce((s, v) => s + v, 0)
-        const meta = [t.at.slice(11, 16), tools ? `${tools} тул.` : '', t.files.length ? `${t.files.length} файл.` : '', t.errors ? `ошибок ${t.errors}` : ''].filter(Boolean).join(' · ')
-        return (
-          <Box key={`turn-${t.n}`} flexDirection="column" marginTop={ti === 0 ? SPACE.item : SPACE.section}>
-            {Split(els, `th-${t.n}`, <Text bold wrap="truncate-end">Ход {t.n}</Text>, <Text dimColor color={t.errors ? RED : undefined}>{meta}</Text>)}
-            <Text wrap="wrap">{t.ask.ru || '—'}</Text>
-            {t.did.ru ? <Text dimColor wrap="wrap">→ {t.did.ru}</Text> : t.mapped ? null : <Text dimColor>→ ещё не на карте</Text>}
-            {made.length ? (
-              <Text wrap="wrap">{made.slice(0, 5).map((n, i) => <Text key={`tm-${t.n}-${i}`} color={COLOR[n.kind]}>{`+ ${LABEL[n.kind]}  `}</Text>)}</Text>
-            ) : null}
-            {ActionBar(els, `ta-${t.n}`, [
-              <Button key={`tq-${t.n}`} plain label="что изменилось?" onPress={() => a.askAbout(`Что изменилось в ходе ${t.n} («${t.ask.ru.slice(0, 80)}») и зачем?`)} />,
-            ])}
-          </Box>
-        )
-      })}
-      {fileRows.length ? Rule(els, 'r-files', 'Файлы', d.width, files.size) : null}
-      {fileRows.length ? <Text dimColor wrap="truncate-end">клетки — последние ходы {window[0] ?? ''}–{lastN}, ■ — файл менялся</Text> : null}
-      {fileRows.map(([path, f], fi) => {
-        const cells = window.map(n => (f.turns.includes(n) ? '■' : '·')).join('')
-        const isOpen = d.diff?.path === path
-        return (
-          <Box key={`f-${path}`} flexDirection="column" marginTop={fi === 0 ? SPACE.item : SPACE.section}>
-            {Split(els, `fh-${path}`, <Text wrap="truncate-start">{f.label}</Text>, <Text color={BLUE}>{cells}</Text>)}
-            {ActionBar(els, `fa-${path}`, [
-              <Button key={`fo-${path}`} label="Открыть" onPress={() => a.openFile(path)} />,
-              <Button key={`fd-${path}`} label={isOpen ? 'Скрыть diff' : 'Diff'} onPress={() => a.showDiff(path)} />,
-              <Button key={`fq-${path}`} plain label="зачем менялся?" onPress={() => a.askAbout(`Зачем менялся файл ${f.label} и что в нём сейчас главное?`)} />,
-            ])}
-            {isOpen && d.diff ? (
-              <Box flexDirection="column" marginTop={1}>
-                {d.diff.note ? <Text dimColor wrap="wrap">{d.diff.note}</Text> : null}
-                {d.diff.text ? <Code key={`fdiff-${path}`} source={d.diff.text.slice(0, 9500)} format={d.diff.note.startsWith('новый') ? 'source' : 'diff'} path={path} /> : null}
-              </Box>
-            ) : null}
-          </Box>
-        )
-      })}
-    </Box>
-  )
+  const at = await iso($)
+  const L = await setTask($, t => ({ ...t, phase: 'work', started: t.started ?? at, ...(base && !t.base ? { base } : {}) }))
+  await update($, editing, () => '')
+  if (L.task) say($, startMessage(L.task))
 }
 
-// ---------- 4. ask ----------
-
-const QUICK = [
-  { label: 'Что сделано за час?', q: 'Что сделано за последний час? Кратко, по пунктам, с файлами.' },
-  { label: 'Что ты решил сам?', q: 'Какие решения ты принял сам, без меня? Какие из них стоит проверить?' },
-  { label: 'Что может сломаться?', q: 'Что в текущей работе может сломаться или уже сломано? Самое рискованное первым.' },
-  { label: 'Объясни схемой', q: 'Объясни, как сейчас устроено то, над чем мы работаем, ASCII-схемой в блоке кода и 3 предложениями.' },
-]
-
-function Ask(els: Els, d: Data, a: Actions) {
-  const { Box, Text, Button, Input, Markdown } = els
-  return (
-    <Box flexDirection="column">
-      <Box marginTop={1}>
-        <Input key="ask-input" label="Вопрос" placeholder="спроси о сессии" submitLabel="спросить" onSubmit={v => a.ask(v)} />
-      </Box>
-      <Box marginTop={SPACE.item}><Text dimColor wrap="wrap">Ответ строится поверх всей сессии, но в саму сессию ничего не добавляет.</Text></Box>
-      {Rule(els, 'r-quick', 'Быстрые вопросы', d.width)}
-      {ActionBar(els, 'quick', QUICK.map((x, i) => <Button key={`quick-${i}`} label={x.label} onPress={() => a.ask(x.q)} />))}
-      {d.qa.length ? Rule(els, 'r-answers', 'Ответы', d.width, d.qa.length) : null}
-      {[...d.qa].reverse().slice(0, 6).map((x, i) => (
-        <Box key={`qa-${i}`} flexDirection="column" marginTop={i === 0 ? SPACE.item : SPACE.section}>
-          <Text bold wrap="wrap">› {x.q}</Text>
-          {x.status === 'running' ? <Text dimColor>⟳ думаю…</Text> : <Markdown key={`qa-md-${i}`} text={x.a.slice(0, 9000)} />}
-          {x.status === 'done' ? ActionBar(els, `qaa-${i}`, [
-            <Button key={`qs-${i}`} plain label="проще" onPress={() => a.ask(`Объясни проще, в 3 коротких предложениях: ${x.q}`)} />,
-            <Button key={`qd-${i}`} plain label="схемой" onPress={() => a.ask(`Покажи ASCII-схемой в блоке кода: ${x.q}`)} />,
-            <Button key={`qc-${i}`} plain label="проверь меня" onPress={() => a.ask(`Задай мне 3 коротких вопроса, чтобы проверить, понял ли я ответ на: ${x.q}. Ответы не пиши.`)} />,
-          ]) : null}
-        </Box>
-      ))}
-    </Box>
-  )
+async function setAuthority($: EngineInterface, level: Authority) {
+  const t = (await read($, ledger)).task
+  if (!t || t.phase === 'accepted') {
+    await update($, policy, () => level)
+    const base = await ensureTasksRoot($)
+    if (base) await $.fs.write(`${base}/policy.json`, JSON.stringify({ authority: level }, null, 2))
+    return
+  }
+  if (t.authority === level) return
+  await setTask($, x => ({ ...x, authority: level }))
+  const a = AUTHORITY[level]
+  if (t.phase === 'work' || t.phase === 'review') await addNote($, `Полномочия теперь «${a.label}»: сам — ${a.alone.ru}; только со мной — ${a.withYou.ru}.`)
 }
+
+const ADD_NOTE: Record<AddKind, string> = { rule: 'Новое правило', ban: 'Новый запрет', fact: 'Факт от меня', criterion: 'Новый критерий готовности' }
+
+async function addItem($: EngineInterface, kind: AddKind, text: string) {
+  const s = text.trim()
+  await update($, editing, () => '')
+  if (!s) return
+  const L = await read($, ledger)
+  const goal = L.nodes.find(n => n.kind === 'goal' && !gone(n))
+  const t = { en: s, ru: s }
+  const board = [{ ref: 'board', type: 'user' as const }]
+  const op: Op = kind === 'rule' ? { op: 'add', kind: 'constraint', title: t, statement: t, evidence: board }
+    : kind === 'ban' ? { op: 'add', kind: 'constraint', title: { en: `Never: ${s}`, ru: `Нельзя: ${s}` }, statement: { en: `Never: ${s}`, ru: `Нельзя: ${s}` }, evidence: board }
+      : kind === 'fact' ? { op: 'add', kind: 'finding', title: t, statement: t, evidence: [{ ref: 'the person said so', type: 'user' }], likelihood: 'almost-certain', confidence: 'high' }
+        : { op: 'add', kind: 'criterion', ...(goal ? { parent: goal.id } : {}), title: t, status: 'todo', evidence: board }
+  const [id] = await commit($, [op], current?.n ?? L.turns.at(-1)?.n ?? 1, 'user')
+  await addNote($, `${ADD_NOTE[kind]} (${id}): ${s}`)
+}
+
+async function markStale($: EngineInterface, id: string) {
+  const L = await read($, ledger)
+  if (id === 'brief') {
+    await addNote($, `На доске устарел главный вывод: «${L.brief?.answer.ru ?? ''}». Скажи, что верно сейчас.`)
+    return
+  }
+  const n = L.nodes.find(x => x.id === id)
+  if (!n) return
+  await commit($, [{ op: 'update', id, status: 'stale' }], current?.n ?? L.turns.at(-1)?.n ?? 1, 'user')
+  await addNote($, `Устарело на доске: ${id} «${n.title.ru}». Скажи, что верно сейчас: картограф перепишет или закроет пункт.`)
+}
+
+async function sendNotes($: EngineInterface) {
+  const queued = await read($, notes)
+  if (!queued.length) return
+  // clear first: the prompt.submit hook would attach them a second time
+  await update($, notes, () => [])
+  say($, `Заметки с доски:\n${queued.map(n => `- ${n}`).join('\n')}`)
+}
+
+async function sendVerdict($: EngineInterface, kind: VerdictKind) {
+  const L = await read($, ledger)
+  const t = L.task
+  if (!t) return
+  const v = await read($, verdict)
+  const msg = verdictMessage(kind, L, v)
+  const at = await iso($)
+  const turn = L.turns.at(-1)?.n ?? 1
+  const ops: Op[] = []
+  for (const [id, m] of Object.entries(v.marks)) {
+    const n = L.nodes.find(x => x.id === id)
+    if (!n || m !== 'no') continue
+    if (n.kind === 'criterion') ops.push({ op: 'update', id, status: 'failed' })
+    else if (n.kind === 'assumption') ops.push({ op: 'update', id, status: 'invalid' })
+    else if (n.kind === 'decision') ops.push({ op: 'update', id, status: 'disputed' })
+  }
+  for (const r of v.rules) ops.push({ op: 'add', kind: 'constraint', title: { en: r, ru: r }, statement: { en: r, ru: r }, evidence: [{ ref: 'feedback', type: 'user' }] })
+  if (kind === 'accept') for (const g of L.nodes.filter(n => n.kind === 'goal' && n.status !== 'done' && !gone(n))) ops.push({ op: 'update', id: g.id, status: 'done' })
+  if (ops.length) await commit($, ops, turn, 'user')
+  const base = await ensureTasksRoot($)
+  if (v.rules.length && base) {
+    const file = `${base}/RULES.md`
+    const prev = (await $.fs.exists(file)) ? await $.fs.read(file) : '# Project rules\n\nRules from task feedback. session-board gives them to Claude at the start of every session.\n'
+    const slug = t.dir.split('/').pop() ?? ''
+    await $.fs.write(file, `${prev.trimEnd()}\n${v.rules.map(r => `- ${r} _(${slug}, ${at.slice(0, 10)})_`).join('\n')}\n`)
+    projectRules = await $.fs.read(file)
+  }
+  if (t.dir) {
+    const file = `${t.dir}/feedback.md`
+    const prev = (await $.fs.exists(file)) ? await $.fs.read(file) : `# Приёмка: ${t.title.ru}\n`
+    await $.fs.write(file, `${prev.trimEnd()}\n\n## Раунд ${t.round}: ${VERDICT_LABEL[kind]} (${at.slice(0, 16).replace('T', ' ')})\n\n${msg}\n`)
+  }
+  await setTask($, x => ({ ...x, phase: kind === 'accept' ? 'accepted' : 'work', round: kind === 'return' ? x.round + 1 : x.round, acceptOnSubmit: kind === 'fixes' }))
+  await update($, verdict, () => emptyVerdict())
+  await update($, editing, () => '')
+  if (kind === 'accept') await buildReport($)
+  say($, msg)
+}
+
+async function continueTask($: EngineInterface, dir: string) {
+  if (!(await $.fs.exists(`${dir}/ledger.json`))) return
+  try {
+    const saved = JSON.parse(await $.fs.read(`${dir}/ledger.json`)) as Ledger
+    if (!saved || saved.v !== 1 || !Array.isArray(saved.nodes)) return
+    const L = await update($, ledger, () => ({ ...cleanBrief(saved).ledger, sid: sessionId }))
+    await persist($, L, [])
+  } catch {
+    $.ui.toast('Не удалось прочитать журнал задачи')
+    return
+  }
+  await update($, view, () => '')
+  // the next prompt carries the protocol again, with this folder
+  await update($, greeted, () => '')
+  await refreshOpenTasks($)
+}
+
+// ---------- tool descriptions: the protocol Claude follows ----------
+
+const TASK_TOOL_DESCRIPTION =
+  'Write the task brief to the session board: the contract between the person and you. Use it when the person gives a new task, or asks to write up the current work as a task. ' +
+  'Before the call, ask ALL missing questions at once in ONE AskUserQuestion call; do not drip questions later. ' +
+  'Fill title (10 words or fewer), goal (what must change and why), result (what to hand in), done_when (2 to 5 checkable criteria: a command, a test, a screenshot), rules, out_of_scope, authority, materials. ' +
+  'Give every text in plain English plus a Russian version for the board (title_ru, goal_ru, result_ru; {en, ru} items in done_when and rules; out_of_scope and materials in Russian). ' +
+  'After the call, end your turn: the person reviews the brief and presses Start. Call it again to amend the brief.'
+
+const SUBMIT_TOOL_DESCRIPTION =
+  'Hand in the work for acceptance. Call it only when the work is done: first check EVERY criterion of the brief (K1, K2...) yourself and collect evidence (test, command and its output, file:line, URL). ' +
+  'Give summary and summary_ru (what you got, 2 to 4 sentences, the result first), criteria [{id, status: proven|failed, evidence[]}], verify (steps the person can run to check, in Russian), not_done and next (in Russian). ' +
+  'The board builds an HTML report and shows the person the Acceptance screen. After the call, end your turn and wait for one verdict.'
 
 export const register: Register = (on, options) => {
   cfg.updateMode = options.update === 'manual' ? 'manual' : 'every-turn'
@@ -667,60 +507,89 @@ export const register: Register = (on, options) => {
   current = null
   busy = false
   pending = null
+  pointerFor = ''
 
   // ---------- session ----------
 
   on('session.start', async ($, e, next) => {
-    const sid = await $.session.id()
-    dir = `${e.cwd}/.claude/session-board/${sid}`
-    if (await $.fs.exists(`${dir}/ledger.json`)) {
+    root = e.cwd
+    sessionId = await $.session.id()
+    const legacy = `${root}/.claude/session-board/${sessionId}`
+    const state = await read($, ledger)
+    if (state.sid !== sessionId || (!state.nodes.length && !state.task)) {
+      // a new or resumed session: its task folder first, then the old per-session ledger
+      let saved: Ledger | null = null
       try {
-        const saved = JSON.parse(await $.fs.read(`${dir}/ledger.json`)) as Ledger
-        if (saved && saved.v === 1 && Array.isArray(saved.nodes)) await update($, ledger, () => cleanBrief(saved).ledger)
+        if (await $.fs.exists(`${legacy}/task.json`)) {
+          const ptr = JSON.parse(await $.fs.read(`${legacy}/task.json`)) as { dir?: string }
+          if (ptr.dir && (await $.fs.exists(`${ptr.dir}/ledger.json`))) saved = JSON.parse(await $.fs.read(`${ptr.dir}/ledger.json`)) as Ledger
+        }
+        if (!saved && (await $.fs.exists(`${legacy}/ledger.json`))) saved = JSON.parse(await $.fs.read(`${legacy}/ledger.json`)) as Ledger
       } catch {
-        // a broken file: start a fresh ledger, keep the old file untouched
+        saved = null
       }
-    } else {
-      await update($, ledger, prev => (prev.sid === sid ? prev : emptyLedger(sid)))
+      if (saved && saved.v === 1 && Array.isArray(saved.nodes)) {
+        const ok = saved
+        await update($, ledger, () => ({ ...cleanBrief(ok).ledger, sid: sessionId }))
+      } else {
+        await update($, ledger, prev => (prev.sid === sessionId ? prev : emptyLedger(sessionId)))
+      }
     }
-    await update($, ledger, prev => ({ ...prev, sid }))
+    await update($, ledger, prev => ({ ...prev, sid: sessionId }))
+    try {
+      const base = tasksRoot()
+      if (await $.fs.exists(`${base}/policy.json`)) {
+        const p = JSON.parse(await $.fs.read(`${base}/policy.json`)) as { authority?: unknown }
+        if (isAuthority(p.authority)) {
+          const level = p.authority
+          await update($, policy, () => level)
+        }
+      }
+      projectRules = (await $.fs.exists(`${base}/RULES.md`)) ? await $.fs.read(`${base}/RULES.md`) : ''
+    } catch {
+      projectRules = ''
+    }
+    // an old ledger with goals gets its task folder now
+    await ensureTask($)
+    await refreshOpenTasks($)
     // a reload drops pending timers: catch up the last turn if it never reached the map
     const L0 = await read($, ledger)
-    const lastTurn = L0.turns.at(-1)
     const behind = catchUpDigest(L0)
-    if (cfg.updateMode === 'every-turn' && lastTurn && behind) schedule($, behind)
+    if (cfg.updateMode === 'every-turn' && L0.turns.length && behind) schedule($, behind)
 
     await $.command.register({ name: 'board', description: 'Open the session board' })
     await $.command.register({ name: 'board-update', description: 'Rebuild the session map now (one model call over the session)' })
     await $.command.register({ name: 'board-ask', description: 'Ask a question about this session without adding to it', argumentHint: '<question>' })
+    await $.command.register({ name: 'board-report', description: 'Build the HTML report of the task and open it' })
 
     await $.tool.register({
       name: 'ledger_read',
       description:
-        'Read the session ledger: the structured history of THIS session (goals, user constraints, decisions, findings, dead ends, open questions). Call it after compaction, before you repeat an approach, or when the user asks what was decided. With no input it returns the brief; give an id (like D2) for one node with its children, or a section.',
+        'Read the session ledger: the structured history of THIS task (brief, goals, criteria, user constraints, decisions, findings, dead ends, open questions). Call it after compaction, before you repeat an approach, or when the user asks what was decided. With no input it returns the brief; give an id (like D2) for one node with its children, or a section.',
       inputSchema: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'A node id such as G1, D2, F3' },
-          section: { type: 'string', enum: ['brief', 'decisions', 'constraints', 'dead-ends', 'open', 'all'] },
+          id: { type: 'string', description: 'A node id such as G1, K2, D2, F3' },
+          section: { type: 'string', enum: ['brief', 'task', 'decisions', 'constraints', 'dead-ends', 'open', 'all'] },
         },
       },
     })
     await $.tool.register({
       name: 'note',
       description:
-        'Record one item in the session ledger at once: a decision, a finding with evidence, an open question for the user, a constraint the user stated, or a dead end. Use it when something important is decided or proven; the board shows it to the user.',
+        'Record one item in the session ledger at once: a decision you took yourself (it goes to the acceptance list), an assumption, a finding with evidence, an open question for the user, a constraint the user stated, or a dead end. Give an existing id to update that item instead (for example mark a step done or a criterion proven with evidence).',
       inputSchema: {
         type: 'object',
-        required: ['kind', 'title'],
+        required: ['title'],
         properties: {
+          id: { type: 'string', description: 'An existing node id to update instead of adding' },
           kind: { type: 'string', enum: ['goal', 'constraint', 'question', 'hypothesis', 'task', 'finding', 'decision', 'open', 'assumption', 'risk'] },
           title: { type: 'string', description: '10 words or fewer, plain English' },
           title_ru: { type: 'string', description: 'The same title in plain Russian' },
           statement: { type: 'string', description: 'One sentence, 25 words or fewer' },
           statement_ru: { type: 'string' },
           parent: { type: 'string', description: 'Parent node id, if any' },
-          status: { type: 'string', description: 'For example done, refuted, accepted' },
+          status: { type: 'string', description: 'For example done, refuted, accepted, proven' },
           evidence: { type: 'array', items: { type: 'string' }, description: 'file:line, command, test or URL' },
         },
       },
@@ -739,20 +608,60 @@ export const register: Register = (on, options) => {
         },
       },
     })
+    const pair = { type: 'object', properties: { en: { type: 'string' }, ru: { type: 'string' } }, required: ['en', 'ru'] }
+    await $.tool.register({
+      name: 'task',
+      description: TASK_TOOL_DESCRIPTION,
+      inputSchema: {
+        type: 'object',
+        required: ['title', 'title_ru', 'goal', 'goal_ru', 'done_when'],
+        properties: {
+          title: { type: 'string' }, title_ru: { type: 'string' },
+          goal: { type: 'string' }, goal_ru: { type: 'string' },
+          result: { type: 'string' }, result_ru: { type: 'string' },
+          done_when: { type: 'array', items: pair, description: '2 to 5 checkable criteria' },
+          rules: { type: 'array', items: pair, description: 'Rules and bans the person stated' },
+          out_of_scope: { type: 'array', items: { type: 'string' } },
+          materials: { type: 'array', items: { type: 'string' }, description: 'Files, links, examples' },
+          authority: { type: 'string', enum: ['careful', 'normal', 'bold'], description: 'What you may do alone; default: the project policy' },
+        },
+      },
+    })
+    await $.tool.register({
+      name: 'submit',
+      description: SUBMIT_TOOL_DESCRIPTION,
+      inputSchema: {
+        type: 'object',
+        required: ['summary_ru', 'criteria'],
+        properties: {
+          summary: { type: 'string' }, summary_ru: { type: 'string' },
+          criteria: {
+            type: 'array',
+            items: {
+              type: 'object', required: ['id', 'status'],
+              properties: { id: { type: 'string' }, status: { type: 'string', enum: ['proven', 'failed'] }, evidence: { type: 'array', items: { type: 'string' } } },
+            },
+          },
+          verify: { type: 'array', items: { type: 'string' } },
+          not_done: { type: 'array', items: { type: 'string' } },
+          next: { type: 'array', items: { type: 'string' } },
+        },
+      },
+    })
 
-    if (cfg.autoOpen && e.isInteractive) void $.ui.open({ id: PANE, title: 'Доска сессии' })
+    if (cfg.autoOpen && e.isInteractive) openBoard($)
     return next(e)
   })
 
   on('command.run', { command: 'board' }, async $ => {
-    await $.ui.open({ id: PANE, title: 'Доска сессии' })
+    await $.ui.open({ id: PANE, title: TITLE })
     return { text: 'Session board opened.' }
   })
 
   on('command.run', { command: 'board-update' }, async $ => {
     const L = await read($, ledger)
     schedule($, L.nodes.length ? catchUpDigest(L) ?? lastDigest(L) : 'bootstrap')
-    await $.ui.open({ id: PANE, title: 'Доска сессии' })
+    await $.ui.open({ id: PANE, title: TITLE })
     return { text: 'Session board: map update started.' }
   })
 
@@ -760,9 +669,16 @@ export const register: Register = (on, options) => {
     const q = (e.args ?? '').trim()
     if (!q) return { text: 'Usage: /board-ask <question>' }
     await update($, view, () => 'ask')
-    await $.ui.open({ id: PANE, title: 'Доска сессии' })
+    await $.ui.open({ id: PANE, title: TITLE })
     $.clock.after(0, () => void runAsk($, q))
     return { text: 'Session board: the answer appears in the Ask view.' }
+  })
+
+  on('command.run', { command: 'board-report' }, async $ => {
+    const path = await buildReport($)
+    if (!path) return { text: 'Session board: the task has no folder yet, so there is no report.' }
+    await openPath($, path)
+    return { text: `Session board: report at ${path}` }
   })
 
   // ---------- turn pipeline ----------
@@ -771,7 +687,27 @@ export const register: Register = (on, options) => {
     const L = await read($, ledger)
     current = { n: (L.turns.at(-1)?.n ?? 0) + 1, ask: e.text.trim() || (e.attachments?.length ? '(вложение без текста)' : ''), tools: {}, files: new Set(), paths: new Set(), errors: [], ops: [], touched: [] }
     await update($, live, () => [])
-    return next(e)
+    const fromPerson = USER_ORIGINS.has(e.origin?.kind)
+    const fromBoard = e.origin?.kind === 'plugin'
+    // The person wrote in the chat: their message probably answers the open questions. Take the cards down now;
+    // the cartographer marks each one answered, or opens it again when the message did not answer it.
+    if (fromPerson && current.ask) {
+      const waiting = L.nodes.filter(n => n.kind === 'open' && n.status === 'open' && (n.ask ?? 'user') === 'user')
+      if (waiting.length) await commit($, waiting.map(n => ({ op: 'update' as const, id: n.id, status: 'pending' })), current.n, 'user')
+    }
+    if (!fromPerson && !fromBoard) return next(e)
+    // what Claude reads beside the prompt and the person never sees: the protocol once a session, the board notes
+    const extra: string[] = []
+    if (sessionId && (await read($, greeted)) !== sessionId) {
+      extra.push(protocol(L.task?.dir ?? '', projectRules))
+      await update($, greeted, () => sessionId)
+    }
+    const queued = await read($, notes)
+    if (queued.length) {
+      extra.push(`Notes the person added on the session board since their last message. Apply them:\n${queued.map(n => `- ${n}`).join('\n')}`)
+      await update($, notes, () => [])
+    }
+    return next(extra.length ? { ...e, context: [...(e.context ?? []), ...extra] } : e)
   })
 
   on('tool.call', async ($, e, next) => {
@@ -831,16 +767,19 @@ export const register: Register = (on, options) => {
     return r
   })
 
-  // ---------- compaction: keep the ledger shape, then hand Claude the brief ----------
+  // ---------- compaction: the files keep the ledger; the summary keeps only what the files lack ----------
 
   on('session.compact', async ($, e, next) => {
     if (e.agentId) return next(e)
-    const result = await next({ ...e, instructions: e.instructions ? `${e.instructions}\n\n${COMPACT_RULES}` : COMPACT_RULES })
+    const L0 = await read($, ledger)
+    const rules = compactRules(renderBrief(L0), L0.task?.dir ?? '')
+    const result = await next({ ...e, instructions: e.instructions ? `${e.instructions}\n\n${rules}` : rules })
     if (cfg.injectAfterCompact && !('skip' in result)) {
       const L = await read($, ledger)
-      if (L.nodes.length || L.brief) {
+      if (L.nodes.length || L.brief || L.task) {
+        const text = `${renderBrief(L)}\n\n${protocol(L.task?.dir ?? '', projectRules)}`
         $.clock.after(0, () => {
-          void $.session.append({ message: { type: 'user', content: [{ type: 'text', text: renderBrief(L) }] } })
+          void $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } })
         })
       }
     }
@@ -856,6 +795,8 @@ export const register: Register = (on, options) => {
     if (input.id) {
       const n = L.nodes.find(x => x.id === input.id)
       text = n ? JSON.stringify({ node: n, children: L.nodes.filter(x => x.parent === n.id).map(x => ({ id: x.id, kind: x.kind, status: x.status, title: x.title.en })) }, null, 1) : `No node ${input.id}.`
+    } else if (input.section === 'task') {
+      text = L.task ? renderTaskMd(L) : 'No task brief yet.'
     } else if (input.section && input.section !== 'brief') {
       const pick: Record<string, (k: Ledger['nodes'][number]) => boolean> = {
         decisions: n => n.kind === 'decision',
@@ -869,23 +810,41 @@ export const register: Register = (on, options) => {
     } else {
       text = renderBrief(L)
     }
-    return { result: text, text }
+    return reply(text)
   })
 
   on('tool.call', { tool: 'mcp__session-board__note' }, async ($, e) => {
     const i = e as unknown as Record<string, unknown>
-    const s = (k: string) => (typeof i[k] === 'string' ? (i[k] as string) : undefined)
+    const s = (k: string) => (typeof i[k] === 'string' && (i[k] as string).trim() ? (i[k] as string) : undefined)
+    const L = await read($, ledger)
+    const turn = current?.n ?? L.turns.at(-1)?.n ?? 1
+    const evidence = Array.isArray(i.evidence) ? i.evidence.map(x => ({ ref: String(x), type: 'tool' })) : undefined
+    const id = s('id')
+    if (id) {
+      const n = L.nodes.find(x => x.id === id)
+      if (!n) return reply(`No node ${id}.`)
+      const op = parseOp({
+        op: 'update', id, status: s('status'),
+        ...(s('title') ? { title: { en: s('title'), ru: s('title_ru') ?? s('title') } } : {}),
+        ...(s('statement') ? { statement: { en: s('statement'), ru: s('statement_ru') ?? s('statement') } } : {}),
+        ...(evidence ? { evidence: [...n.evidence, ...evidence].slice(0, 8) } : {}),
+      })
+      if (!op) return reply(`Not updated: ${id}.`)
+      await commit($, [op], turn, 'claude')
+      if (current) current.touched.push(id)
+      return reply(`Updated ${id}.`)
+    }
     const op = parseOp({
       op: 'add', kind: i.kind, parent: s('parent'), status: s('status'),
       title: { en: s('title') ?? '', ru: s('title_ru') ?? s('title') ?? '' },
       ...(s('statement') ? { statement: { en: s('statement'), ru: s('statement_ru') ?? s('statement') } } : {}),
-      evidence: Array.isArray(i.evidence) ? i.evidence.map(x => ({ ref: String(x), type: 'tool' })) : [],
+      evidence: evidence ?? [],
+      ...(i.kind === 'decision' ? { by: 'claude' } : {}),
     })
-    if (!op) return { result: 'Not recorded: kind and title are required.', text: 'Not recorded: kind and title are required.' }
-    const turn = current?.n ?? (await read($, ledger)).turns.at(-1)?.n ?? 1
-    const [id] = await commit($, [op], turn, 'claude')
-    if (current && id) current.touched.push(id)
-    return { result: `Recorded ${id}.`, text: `Recorded ${id}.` }
+    if (!op) return reply('Not recorded: kind and title are required.')
+    const [added] = await commit($, [op], turn, 'claude')
+    if (current && added) current.touched.push(added)
+    return reply(`Recorded ${added}.`)
   })
 
   on('tool.call', { tool: 'mcp__session-board__show' }, async ($, e) => {
@@ -894,7 +853,83 @@ export const register: Register = (on, options) => {
     const at = await iso($)
     await update($, explain, () => ({ title: (i.title ?? 'Объяснение').slice(0, 80), markdown: (i.markdown ?? '').slice(0, 10000), svg, at }))
     await $.ui.open({ id: EXPLAIN_PANE, title: (i.title ?? 'Объяснение').slice(0, 40) })
-    return { result: 'Shown in the session board.', text: 'Shown in the session board.' }
+    return reply('Shown in the session board.')
+  })
+
+  on('tool.call', { tool: 'mcp__session-board__task' }, async ($, e) => {
+    const input = parseTaskInput(e as unknown as Record<string, unknown>)
+    if ('error' in input) return reply(`Not recorded: ${input.error}.`)
+    const at = await iso($)
+    let L = await read($, ledger)
+    if (L.task?.phase === 'accepted') {
+      // a new task after an accepted one starts a fresh ledger; the old one stays in its folder
+      L = await update($, ledger, prev => ({ ...emptyLedger(prev.sid), updated: at }))
+      await update($, verdict, () => emptyVerdict())
+    }
+    await commit($, briefOps(L, input), current?.n ?? L.turns.at(-1)?.n ?? 1, 'claude')
+    const prev = (await read($, ledger)).task ?? null
+    let dir = prev?.dir ?? ''
+    if (!dir) dir = await newTaskDir($, input.title.en)
+    else if (prev && !prev.formal) {
+      // work that grew without a brief now gets a folder named after the real title
+      const renamed = await newTaskDir($, input.title.en)
+      if (renamed && (await $.process.run(['mv', dir, renamed])).exitCode === 0) dir = renamed
+    }
+    const keepPhase = prev && prev.formal && prev.phase !== 'intake'
+    const task: TaskSpec = {
+      title: input.title, goal: input.goal, result: input.result, outOfScope: input.outOfScope, materials: input.materials,
+      authority: input.authority ?? prev?.authority ?? (await read($, policy)),
+      dir, created: prev?.created ?? at, phase: keepPhase ? prev.phase : 'intake', round: prev?.round ?? 1, formal: true,
+      ...(prev?.started ? { started: prev.started } : {}),
+      ...(prev?.base ? { base: prev.base } : {}),
+    }
+    const L2 = await update($, ledger, x => ({ ...x, task, updated: at }))
+    await persist($, L2, [])
+    await update($, view, () => '')
+    await update($, editing, () => '')
+    await refreshOpenTasks($)
+    openBoard($)
+    return reply(task.phase === 'intake'
+      ? `Task brief recorded${dir ? ` in ${dir}/task.md` : ''}. End your turn now: the person reviews the brief on the board and presses Start. Do not start the work before that.`
+      : `Task brief updated${dir ? ` in ${dir}/task.md` : ''}. Go on with the work.`)
+  })
+
+  on('tool.call', { tool: 'mcp__session-board__submit' }, async ($, e) => {
+    const raw = e as unknown as Record<string, unknown>
+    await ensureTask($)
+    const L = await read($, ledger)
+    const t = L.task
+    if (!t) return reply('Not handed in: there is no task. Write the brief with the task tool first.')
+    const summary = txt(typeof raw.summary === 'string' && typeof raw.summary_ru === 'string' ? { en: raw.summary, ru: raw.summary_ru } : raw.summary_ru ?? raw.summary, 1200)
+    if (!summary) return reply('Not handed in: summary_ru is required.')
+    const crit = criteriaOf(L)
+    const items = (Array.isArray(raw.criteria) ? raw.criteria : []).filter(isObj)
+    const ops: Op[] = []
+    for (const it of items) {
+      const k = crit.find(c => c.id === it.id)
+      if (!k) continue
+      const ev = strs(it.evidence, 6).map(r => ({ ref: r.slice(0, 200), type: 'tool' as const }))
+      ops.push({ op: 'update', id: k.id, ...(it.status === 'proven' || it.status === 'failed' ? { status: it.status } : {}), evidence: [...k.evidence, ...ev].slice(0, 8) })
+    }
+    const closing = !!t.acceptOnSubmit
+    if (closing) for (const g of L.nodes.filter(n => n.kind === 'goal' && n.status !== 'done' && !gone(n))) ops.push({ op: 'update', id: g.id, status: 'done' })
+    if (ops.length) await commit($, ops, current?.n ?? L.turns.at(-1)?.n ?? 1, 'claude')
+    const at = await iso($)
+    const sub: Submission = { at, round: t.round, summary, verify: strs(raw.verify), notDone: strs(raw.not_done), next: strs(raw.next) }
+    await setTask($, x => ({ ...x, submitted: sub, phase: closing ? 'accepted' : 'review', acceptOnSubmit: false }))
+    await update($, verdict, () => emptyVerdict())
+    const path = await buildReport($)
+    if (closing && t.dir) {
+      const file = `${t.dir}/feedback.md`
+      const prev = (await $.fs.exists(file)) ? await $.fs.read(file) : `# Приёмка: ${t.title.ru}\n`
+      await $.fs.write(file, `${prev.trimEnd()}\n\nПравки внесены ${at.slice(0, 16).replace('T', ' ')}: задача закрыта.\n`)
+    }
+    openBoard($)
+    $.ui.toast(closing ? 'Правки внесены, задача закрыта' : 'Работа сдана: открой «Приёмку»')
+    const missing = crit.filter(c => !items.some(it => it.id === c.id)).map(c => c.id)
+    return reply(closing
+      ? `Fixes recorded; the task is closed.${path ? ` Report: ${path}.` : ''}`
+      : `Handed in for review${missing.length ? ` (no result for ${missing.join(', ')})` : ''}.${path ? ` Report: ${path}.` : ''} End your turn now and wait for the person's verdict.`)
   })
 
   // ---------- drawing ----------
@@ -905,36 +940,47 @@ export const register: Register = (on, options) => {
       return <Markdown text={renderMarkdown(await read($, ledger), 'ru').slice(0, 9000)} />
     }
     const els = $.ui.resolve(e)
-    const { Box } = els
-    const v = await read($, view)
+    const L = await read($, ledger)
+    const v = resolveView(await read($, view), L.task?.phase)
     const d: Data = {
-      ledger: await read($, ledger),
-      view: VIEWS.some(x => x.id === v) ? v : 'now',
+      ledger: L,
+      view: v,
       expanded: await read($, expanded),
       status: await read($, status),
       // live events redraw the pane on every tool call: read them only where they show
-      live: v === 'history' ? await read($, live) : [],
+      live: v === 'log-turns' ? await read($, live) : [],
       qa: v === 'ask' ? await read($, qa) : [],
       answering: await read($, answering),
-      diff: v === 'history' ? await read($, diff) : null,
+      diff: v === 'log-files' ? await read($, diff) : null,
+      verdict: v === 'review' ? await read($, verdict) : emptyVerdict(),
+      notes: await read($, notes),
+      editing: await read($, editing),
+      openTasks: v === 'task' && !L.task ? await read($, openTasks) : [],
+      policy: await read($, policy),
       width: Math.max(24, e.props.bodyColumns - 1),
       ...(e.surface === 'desktop' ? { svg: $.ui.resolve(e).Svg } : {}),
     }
+    // board actions run outside the drawing; a failed one says so instead of failing silently
+    const later = (fn: () => Promise<unknown>) => void fn().catch((err: unknown) => $.ui.toast(`Доска: ${(err as Error).message.slice(0, 80)}`))
     const a: Actions = {
-      setView: x => void update($, view, () => x),
+      setView: x => {
+        void update($, view, () => x)
+        void update($, editing, () => '')
+      },
       toggle: id => void update($, expanded, list => (list.includes(id) ? list.filter(x => x !== id) : [...list, id])),
       refresh: () => {
-        void read($, ledger).then(L => schedule($, L.nodes.length ? catchUpDigest(L) ?? lastDigest(L) : 'bootstrap'))
+        void read($, ledger).then(x => schedule($, x.nodes.length ? catchUpDigest(x) ?? lastDigest(x) : 'bootstrap'))
       },
+      edit: id => void update($, editing, () => id),
       startAnswer: id => void update($, answering, () => id),
       submitAnswer: (id, text) => {
         const t = text.trim()
         void update($, answering, () => '')
         if (!t) return
-        void read($, ledger).then(L => {
-          const n = L.nodes.find(x => x.id === id)
-          void $.prompt.submit({ text: `Ответ на твой вопрос${n ? ` «${n.title.ru}»` : ''}: ${t}`, asUser: true })
-          void commit($, [{ op: 'update', id, status: 'answered' }], current?.n ?? L.turns.at(-1)?.n ?? 1, 'user')
+        void read($, ledger).then(x => {
+          const n = x.nodes.find(y => y.id === id)
+          say($, `Ответ на твой вопрос${n ? ` «${n.title.ru}»` : ''}: ${t}`)
+          void commit($, [{ op: 'update', id, status: 'answered' }], current?.n ?? x.turns.at(-1)?.n ?? 1, 'user')
         })
       },
       ask: q => {
@@ -946,29 +992,60 @@ export const register: Register = (on, options) => {
         $.clock.after(0, () => void runAsk($, q))
       },
       undoDecision: id => {
-        void read($, ledger).then(L => {
-          const n = L.nodes.find(x => x.id === id)
+        void read($, ledger).then(x => {
+          const n = x.nodes.find(y => y.id === id)
           if (!n) return
           const alt = n.rejected?.length ? ` Альтернативы были: ${n.rejected.map(r => r.ru).join('; ')}.` : ''
-          void $.prompt.submit({ text: `Отмени своё решение «${n.title.ru}» (${id}). Предложи, что сделать вместо него, и спроси меня перед изменениями.${alt}`, asUser: true })
+          say($, `Отмени своё решение «${n.title.ru}» (${id}). Предложи, что сделать вместо него, и спроси меня перед изменениями.${alt}`)
         })
       },
-      openFile: path => {
-        $.clock.after(0, () => void openPath($, path))
+      openFile: path => later(() => openPath($, path)),
+      showDiff: path => later(() => toggleDiff($, path)),
+      tellClaude: text => say($, text),
+      newTask: text => {
+        const t = text.trim()
+        void update($, editing, () => '')
+        if (t) say($, `Новая задача: ${t}`)
       },
-      showDiff: path => {
-        $.clock.after(0, () => void toggleDiff($, path))
+      formalize: () => say($, 'Оформи текущую работу как задание через тул task: цель, результат, критерии «готово, когда», правила, вне рамок, полномочия. Все недостающие вопросы задай одним окном. Потом жди «Старт».'),
+      fixTask: text => {
+        const t = text.trim()
+        void update($, editing, () => '')
+        if (t) say($, `Поправь задание: ${t}. Обнови бриф через тул task и жди «Старт».`)
       },
-      tellClaude: text => void $.prompt.submit({ text, asUser: true }),
+      setAuthority: level => later(() => setAuthority($, level)),
+      start: () => later(() => startTask($)),
+      addItem: (kind, text) => later(() => addItem($, kind, text)),
+      stale: id => later(() => markStale($, id)),
+      sendNotes: () => later(() => sendNotes($)),
+      mark: (id, m) => void update($, verdict, v => {
+        const marks = { ...v.marks }
+        if (marks[id] === m) delete marks[id]
+        else marks[id] = m
+        return { ...v, marks }
+      }),
+      comment: (id, text) => {
+        void update($, editing, () => '')
+        void update($, verdict, v => {
+          const comments = { ...v.comments }
+          const t = text.trim()
+          if (t) comments[id] = t
+          else delete comments[id]
+          return { ...v, comments }
+        })
+      },
+      addGeneral: text => {
+        void update($, editing, () => '')
+        const t = text.trim()
+        if (t) void update($, verdict, v => ({ ...v, general: [...v.general, t] }))
+      },
+      toggleRule: text => void update($, verdict, v => ({ ...v, rules: v.rules.includes(text) ? v.rules.filter(r => r !== text) : [...v.rules, text] })),
+      sendVerdict: kind => later(() => sendVerdict($, kind)),
+      openReport: () => later(() => openReport($)),
+      continueTask: dir => later(() => continueTask($, dir)),
     }
     try {
-      const body = d.view === 'why' ? Why(els, d, a) : d.view === 'history' ? History(els, d, a) : d.view === 'ask' ? Ask(els, d, a) : Now(els, d, a)
-      return (
-        <Box flexDirection="column" paddingRight={1}>
-          {Header(els, d, a)}
-          {body}
-        </Box>
-      )
+      return Board(els, d, a)
     } catch (err) {
       const msg = `${(err as Error).name}: ${(err as Error).message}\n${((err as Error).stack ?? '').split('\n').slice(0, 6).join('\n')}`
       $.clock.after(0, () => void reportRenderError($, d.view, msg))
@@ -1002,41 +1079,14 @@ export const register: Register = (on, options) => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
+    if (e.props.hasSurvey || (e.surface !== 'desktop' && e.surface !== 'terminal')) return next(e)
     const L = await read($, ledger)
-    if (!L.brief && !L.turns.length && !L.nodes.length) return next(e)
     const st = await read($, status)
-    const { Box, Text, Button } = $.ui.resolve(e)
-    const tasks = L.nodes.filter(n => n.kind === 'task')
-    const done = tasks.filter(n => n.status === 'done').length
-    const doing = tasks.find(n => n.status === 'doing')
-    const waiting = L.nodes.filter(n => n.kind === 'open' && n.status === 'open' && (n.ask ?? 'user') === 'user').length
-    const decisions = L.nodes.filter(n => n.kind === 'decision' && n.status !== 'superseded').length
-    const cols = e.props.bodyColumns
-    // the step text is cut by hand: a proportional font makes truncation by cells unreliable on desktop
-    const room = Math.max(18, Math.min(64, cols - (waiting ? 70 : 52)))
-    const clip = (t: string) => (t.length > room ? `${t.slice(0, room - 1).trimEnd()}…` : t)
-    const step = st.phase === 'mapping' ? `ставлю на карту: ${st.note}` : doing ? doing.title.ru : L.brief?.answer.ru ?? `ход ${L.turns.length}`
-    const openBoard = (v?: string) => {
-      void $.ui.open({ id: PANE, title: 'Доска сессии' })
-      if (v) void update($, view, () => v)
-    }
-    // the band draws its own collapse mark at the right edge: leave it room
-    return (
-      <Box flexDirection="row" justifyContent="space-between" columnGap={2} paddingRight={4}>
-        <Box flexDirection="row" columnGap={1} flexShrink={1} minWidth={0}>
-          <Box flexShrink={0}><Text color={st.phase === 'mapping' ? '#9aa0a6' : '#5b8cff'}>{st.phase === 'mapping' ? '⟳' : '●'}</Text></Box>
-          <Box flexShrink={1} minWidth={0}><Text wrap="truncate-end" bold={st.phase !== 'mapping'} dimColor={st.phase === 'mapping'}>{clip(step)}</Text></Box>
-        </Box>
-        <Box flexDirection="row" columnGap={2} flexShrink={0} alignItems="center">
-          {tasks.length ? <Text dimColor>{`${done}/${tasks.length} шагов`}</Text> : null}
-          {cols >= 96 ? <Text dimColor>{`ход ${L.turns.length}`}</Text> : null}
-          {cols >= 110 && decisions ? <Text dimColor>{`решений ${decisions}`}</Text> : null}
-          {waiting ? <Button key="band-wait" label={`нужен ты · ${waiting}`} variant="primary" onPress={() => openBoard('now')} /> : null}
-          <Button key="band-ask" plain label="спросить" onPress={() => openBoard('ask')} />
-          <Button key="band-open" plain label="доска" onPress={() => openBoard()} />
-        </Box>
-      </Box>
-    )
+    return Band($.ui.resolve(e), { ledger: L, mapping: st.phase === 'mapping', mappingNote: st.note, cols: e.props.bodyColumns }, {
+      open: v => {
+        openBoard($)
+        void update($, view, () => v)
+      },
+    })
   })
 }

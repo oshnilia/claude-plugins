@@ -7,7 +7,7 @@ and a live board that shows what happens in a session.
 | Plugin | What it does | Where it works |
 |---|---|---|
 | [`legible`](plugins/legible) | Plain English and plain Russian at a measurable strictness (plain-80), diagram-first answers, visual explainers, teach-back checks | Claude Code (CLI, desktop), skills also on claude.ai |
-| [`session-board`](plugins/session-board) | A mod: a side board with the session's main point, an outline map, turns, decisions and open questions; Claude reads the same ledger back after compaction | Claude Code desktop Code tab and CLI (2.1.287+) |
+| [`session-board`](plugins/session-board) | A mod for people who run many sessions at once: give all input at the start (a task brief with criteria and authority), let Claude work alone, give all feedback at the end (an acceptance screen and an HTML report). The task folder keeps the ledger, so compaction loses nothing | Claude Code desktop Code tab and CLI (2.1.287+) |
 
 ## Install
 
@@ -27,7 +27,7 @@ https://x.com/karpathy/status/2105819303471976479. All references we used: [docs
 ## Repository
 
 - `plugins/<name>` — one folder per plugin; `version` lives in each `plugin.json`.
-- `docs/` — references, spike results, the session ledger spec.
+- `docs/` — references, spike results, the session ledger spec, the board logic (`docs/board-logic.md`).
 - `scripts/sync-dev-mod.sh` — copy a mod from the hot-reload folder into the repo, then validate and test it.
 - CI validates the marketplace and each plugin and runs the mod tests.
 
@@ -40,7 +40,9 @@ https://x.com/karpathy/status/2105819303471976479. All references we used: [docs
 
 - **legible** — ответы в формате под задачу: упрощённый технический английский и русский с измеримой строгостью
   (plain-80), сначала схема, наглядные объяснения, проверка понимания;
-- **session-board** — мод для Claude desktop: доска рядом с сессией (суть, карта, ходы, решения, открытые вопросы).
-  Тот же журнал Claude читает после сжатия контекста, чтобы не терять решения, правила и тупики.
+- **session-board** — мод для Claude desktop, если ты ведёшь много сессий сразу. Два касания на задачу:
+  в начале — задание со всеми вводными (цель, результат, критерии «готово, когда», полномочия), в конце — приёмка
+  одним заходом и отчёт HTML по всей сессии. Между ними Claude работает сам и зовёт тебя только при блокере.
+  Журнал лежит в папке задачи, поэтому сжатие контекста ничего не теряет.
 
 Установка — командами выше. Лицензия — MIT.

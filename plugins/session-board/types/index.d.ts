@@ -2,7 +2,7 @@ export type Txt = { en: string; ru: string }
 
 export type Kind =
   | 'goal' | 'constraint' | 'question' | 'hypothesis' | 'task' | 'action'
-  | 'finding' | 'decision' | 'open' | 'assumption' | 'risk'
+  | 'finding' | 'decision' | 'open' | 'assumption' | 'risk' | 'criterion'
 
 export type Evidence = { ref: string; type: 'test' | 'code' | 'doc' | 'tool' | 'user' | 'inference' }
 
@@ -55,6 +55,45 @@ export type TurnCard = {
   mapped: boolean
 }
 
+/** How much Claude may do without the person. */
+export type Authority = 'careful' | 'normal' | 'bold'
+
+/** Where the task stands: no brief, brief drafted, Claude works, work handed in, accepted. */
+export type Phase = 'none' | 'intake' | 'work' | 'review' | 'accepted'
+
+/** What Claude handed in with mcp__session-board__submit. */
+export type Submission = {
+  at: string
+  round: number
+  summary: Txt
+  verify: string[]
+  notDone: string[]
+  next: string[]
+}
+
+/** The task brief: the contract between the person and Claude. Criteria are K nodes, rules are C nodes. */
+export type TaskSpec = {
+  title: Txt
+  goal: Txt
+  result: Txt
+  outOfScope: string[]
+  materials: string[]
+  authority: Authority
+  /** absolute path of the task folder; empty until the task has a title */
+  dir: string
+  created: string
+  started?: string
+  /** git commit at Start, for the report's diff */
+  base?: string
+  phase: Phase
+  round: number
+  /** "accept with fixes": the next hand-in closes the task without another review */
+  acceptOnSubmit?: boolean
+  submitted?: Submission
+  /** false when the task grew out of work without an intake: the board offers to write the brief */
+  formal: boolean
+}
+
 export type Ledger = {
   v: 1
   sid: string
@@ -62,7 +101,19 @@ export type Ledger = {
   brief: Brief | null
   nodes: LedgerNode[]
   turns: TurnCard[]
+  task?: TaskSpec | null
 }
+
+/** The person's draft verdict on the Acceptance screen, before they send it. */
+export type Verdict = {
+  marks: Record<string, 'ok' | 'no'>
+  comments: Record<string, string>
+  general: string[]
+  rules: string[]
+}
+
+/** An unfinished task in this project, offered on the Task screen of a new session. */
+export type OpenTask = { dir: string; title: string; phase: Phase; updated: string }
 
 export type LiveEvent = { tool: string; target: string; ok: boolean | null; at: number }
 
@@ -93,6 +144,12 @@ declare module 'claude-code' {
       answering: string
       explain: Explain | null
       diff: DiffView | null
+      verdict: Verdict
+      notes: string[]
+      editing: string
+      greeted: string
+      openTasks: OpenTask[]
+      policy: Authority
     }
   }
 }
