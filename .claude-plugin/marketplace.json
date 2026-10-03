@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+  "name": "oshn",
+  "description": "Plugins and mods that help you understand what Claude does: legible answer formats and a live session board.",
+  "owner": { "name": "Ilia", "url": "https://github.com/oshnilia" },
+  "plugins": [
+    {
+      "name": "legible",
+      "source": "./plugins/legible",
+      "description": "Answer formats for understanding: plain English and plain Russian at a measurable strictness, diagram-first, visual explainers, teach-back.",
+      "category": "productivity",
+      "tags": ["writing", "diagrams", "explain", "plain-language"]
+    },
+    {
+      "name": "session-board",
+      "source": "./plugins/session-board",
+      "description": "Desktop mod: a live board next to the session with a pyramid summary, a map, a timeline and a session ledger that Claude reads back after compaction.",
+      "category": "productivity",
+      "tags": ["mod", "desktop", "observability", "ledger"]
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+.DS_Store
+node_modules/
+.claude/types/
+.claude/session-board/
+*.pdf
+__pycache__/

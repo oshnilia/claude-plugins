@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Session Board — макет</title>
+<style>
+  :root{
+    --bg:#141414; --pane:#1b1b1b; --card:#232325; --card2:#2a2a2d; --line:#333336;
+    --fg:#ececec; --dim:#9aa0a6; --faint:#6b6f75;
+    --goal:#5b8cff; --rule:#b57bff; --q:#8f7bff; --hyp:#8b93a1; --task:#34b27b; --find:#e0a526; --dec:#ef6b55; --open:#ff9330; --risk:#ff6b6b;
+    --note:#3a3a1e; --notefg:#e8d97a;
+  }
+  @media (prefers-color-scheme: light){
+    :root{ --bg:#f3f3f2; --pane:#ffffff; --card:#f6f6f7; --card2:#ececee; --line:#e2e2e5; --fg:#1f2328; --dim:#5f6670; --faint:#9aa0a6; --note:#fff7cc; --notefg:#6b5600; }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.45 -apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,sans-serif}
+  .wrap{max-width:1640px;margin:0 auto;padding:28px 16px 60px}
+  h1{font-size:22px;margin:0 0 6px}
+  .lead{color:var(--dim);max-width:900px;margin:0 0 22px}
+  .principles{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:10px;margin:0 0 28px}
+  .pr{background:var(--pane);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+  .pr b{display:block;margin-bottom:2px}
+  .pr span{color:var(--dim);font-size:13px}
+  .panes{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:18px;align-items:start}
+  .col h2{font-size:15px;margin:0 0 4px}
+  .col .q{color:var(--dim);font-size:13px;margin:0 0 10px}
+  /* the pane, as the desktop app draws it */
+  .pane{background:var(--pane);border:1px solid var(--line);border-radius:14px;padding:14px;width:100%;max-width:400px}
+  .pane-title{display:flex;justify-content:space-between;color:var(--dim);font-size:13px;margin:-2px 0 12px}
+  .tabs{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:12px}
+  .tab{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:14px}
+  .tab.on{color:var(--fg);font-weight:600}
+  .key{display:inline-grid;place-items:center;min-width:18px;height:18px;border:1px solid var(--line);border-radius:5px;font-size:11px;color:var(--faint)}
+  .status{display:flex;justify-content:space-between;color:var(--faint);font-size:12.5px;margin:-4px 0 12px}
+  .block{margin:0 0 14px}
+  .label{color:var(--dim);font-size:11px;letter-spacing:.06em;text-transform:uppercase;margin:0 0 6px;display:flex;justify-content:space-between;align-items:center}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:11px;padding:10px 12px}
+  .card + .card{margin-top:6px}
+  .row{display:flex;gap:8px;align-items:flex-start}
+  .grow{flex:1;min-width:0}
+  .pill{display:inline-block;font-size:10.5px;font-weight:650;padding:1px 7px;border-radius:99px;white-space:nowrap}
+  .meta{color:var(--faint);font-size:12px}
+  .title{font-weight:600}
+  .big{font-size:15.5px;font-weight:650;line-height:1.35}
+  .btn{display:inline-flex;align-items:center;gap:6px;border-radius:8px;padding:4px 10px;font-size:13px;border:1px solid var(--line);background:var(--card2);color:var(--fg);white-space:nowrap}
+  .btn.primary{background:var(--fg);color:var(--pane);border-color:var(--fg);font-weight:600}
+  .btn.plain{background:none;border:none;padding:2px 0;color:var(--dim)}
+  .btns{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .input{display:flex;align-items:center;gap:8px;border:1px solid var(--line);border-radius:9px;padding:6px 10px;background:var(--pane);margin-top:8px}
+  .input .l{font-weight:600;font-size:13px}
+  .input .ph{color:var(--faint);flex:1;font-size:13px}
+  .input .s{color:var(--faint);font-size:12px}
+  .select{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:8px;padding:3px 9px;font-size:13px;background:var(--card2)}
+  .bar{height:6px;border-radius:3px;background:var(--card2);overflow:hidden;margin-top:6px}
+  .bar i{display:block;height:100%;background:var(--task);border-radius:3px}
+  .steps{margin:8px 0 0;padding:0;list-style:none;font-size:13px}
+  .steps li{display:flex;gap:8px;padding:2px 0;color:var(--dim)}
+  .steps li.done{color:var(--faint)} .steps li.done span:last-child{text-decoration:line-through}
+  .steps li.now{color:var(--fg);font-weight:600}
+  .steps li .m{width:14px;flex:none;text-align:center}
+  .chain{display:flex;flex-direction:column;gap:0;margin-top:4px}
+  .node{border:1px solid var(--line);border-left:3px solid var(--q);background:var(--card);border-radius:9px;padding:7px 10px}
+  .arrow{width:2px;height:12px;background:var(--line);margin-left:16px}
+  .branch{display:flex;flex-direction:column;gap:6px;padding-left:16px;border-left:2px solid var(--line);margin-left:16px;padding-top:6px;padding-bottom:6px}
+  .dead{opacity:.6} .dead .t{text-decoration:line-through}
+  .why{color:var(--dim);font-size:12.5px;margin-top:2px}
+  .ann{display:inline-block;font:600 10px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--notefg);background:var(--note);border-radius:4px;padding:0 5px;margin-left:6px;vertical-align:middle;white-space:nowrap}
+  .tl{position:relative;padding-left:18px}
+  .tl:before{content:"";position:absolute;left:5px;top:6px;bottom:6px;width:2px;background:var(--line)}
+  .tl .card{position:relative}
+  .tl .card:before{content:"";position:absolute;left:-17px;top:13px;width:10px;height:10px;border-radius:50%;background:var(--goal)}
+  .tl .card.empty:before{background:var(--pane);border:2px solid var(--goal);width:6px;height:6px}
+  .spark{display:flex;align-items:flex-end;gap:5px;height:44px;margin-top:6px}
+  .spark i{flex:1;background:var(--goal);opacity:.55;border-radius:3px 3px 0 0}
+  .spark i.err{background:var(--risk);opacity:.8}
+  .files .f{display:flex;justify-content:space-between;font-size:12.5px;padding:2px 0}
+  .files .f span:first-child{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:72%}
+  .cells{display:flex;gap:3px} .cells i{width:9px;height:9px;border-radius:2px;background:var(--card2)} .cells i.on{background:var(--goal)}
+  .md p{margin:4px 0} .md ul{margin:4px 0;padding-left:18px}
+  .band{margin-top:28px;max-width:820px}
+  .bandbar{display:flex;align-items:center;gap:10px;background:var(--pane);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px}
+  .bandbar .grow{color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .legend{margin-top:26px;color:var(--dim);font-size:13px;max-width:980px}
+  .legend code{background:var(--card2);padding:1px 5px;border-radius:4px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Доска сессии — что показывать и как</h1>
+  <p class="lead">Макет на реальных данных этой сессии. Каждый вид отвечает на один вопрос того, кто следит за работой Claude.
+    Жёлтые метки — из каких элементов мода собран блок (<b>Svg</b> рисуется картинкой и перерисовывается раз за ход, остальное — родные элементы).</p>
+
+  <div class="principles">
+    <div class="pr"><b>1. Сверху — то, что требует тебя</b><span>Вопросы к тебе, ошибки, блокеры. Если ничего — блока нет.</span></div>
+    <div class="pr"><b>2. Прогресс, а не список узлов</b><span>Цель → шаги: что готово, что сейчас, что дальше. Дерево узлов само по себе ничего не говорит.</span></div>
+    <div class="pr"><b>3. «Почему» — цепочкой</b><span>Вопрос → что пробовали (✗ / ✓) → решение. Доказательства — по клику.</span></div>
+    <div class="pr"><b>4. Одно главное действие на блок</b><span>Primary-кнопка одна. Остальное — secondary или plain-ссылки «подробнее».</span></div>
+    <div class="pr"><b>5. Без внутренних id</b><span>D1, C1 — для Claude. Человек видит метки «решение», «правило», «тупик».</span></div>
+  </div>
+
+  <div class="panes">
+
+    <!-- ============ 1. СЕЙЧАС ============ -->
+    <div class="col">
+      <h2>1 · Сейчас</h2>
+      <p class="q">«Нужен ли я? Где мы? Что дальше?»</p>
+      <div class="pane">
+        <div class="pane-title"><span>Доска сессии</span><span>⤢ ✕</span></div>
+        <div class="tabs"><span class="tab on"><span class="key">1</span>Сейчас</span><span class="tab"><span class="key">2</span>Почему</span><span class="tab"><span class="key">3</span>История</span><span class="tab"><span class="key">4</span>Спросить</span><span class="ann">Button plain + hotkey</span></div>
+        <div class="status"><span>обновлено 2 мин назад · ход 6</span><span>↻ обновить</span></div>
+
+        <div class="block">
+          <div class="label">Нужен ты · 2 <span class="ann">Text + Button + Input</span></div>
+          <div class="card" style="border-color:var(--open)">
+            <div class="row"><span class="pill" style="background:rgba(255,147,48,.16);color:var(--open)">вопрос</span><div class="grow title">Публиковать репозиторий на GitHub сейчас?</div></div>
+            <div class="why">Всё готово локально. Push — только с твоего «да».</div>
+            <div class="btns"><span class="btn primary">Да, публикуй</span><span class="btn">Позже</span><span class="btn plain">ответить текстом</span></div>
+          </div>
+          <div class="card" style="border-color:var(--risk)">
+            <div class="row"><span class="pill" style="background:rgba(255,107,107,.16);color:var(--risk)">проблема</span><div class="grow title">Картограф сослался на D3, F1, F3 — их нет в журнале</div></div>
+            <div class="btns"><span class="btn">Пересобрать карту</span><span class="btn plain">подробнее ▸</span></div>
+          </div>
+        </div>
+
+        <div class="block">
+          <div class="label">Главное <span class="ann">Text bold</span></div>
+          <div class="big">Маркетплейс и legible готовы локально. Доска работает, сейчас переделываем её вид. Публикация ждёт тебя.</div>
+        </div>
+
+        <div class="block">
+          <div class="label">Прогресс по целям <span class="ann">Svg: полосы · Button «шаги ▸»</span></div>
+          <div class="card">
+            <div class="row"><div class="grow title">Маркетплейс oshn</div><span class="meta">3 из 4</span></div>
+            <div class="bar"><i style="width:75%"></i></div>
+            <ul class="steps"><li class="done"><span class="m">✓</span><span>Каркас, manifest, CI</span></li><li class="done"><span class="m">✓</span><span>README и референсы</span></li><li class="now"><span class="m">●</span><span>Публикация на GitHub — ждёт тебя</span></li></ul>
+          </div>
+          <div class="card">
+            <div class="row"><div class="grow title">Плагин legible</div><span class="meta">3 из 4</span></div>
+            <div class="bar"><i style="width:75%"></i></div>
+          </div>
+          <div class="card">
+            <div class="row"><div class="grow title">Доска сессии</div><span class="meta">4 из 7</span></div>
+            <div class="bar"><i style="width:57%"></i></div>
+            <ul class="steps"><li class="done"><span class="m">✓</span><span>Spike возможностей модов</span></li><li class="done"><span class="m">✓</span><span>Журнал и картограф</span></li><li class="now"><span class="m">●</span><span>Дизайн видов — сейчас</span></li><li><span class="m">○</span><span>Проверить бриф после compaction</span></li></ul>
+          </div>
+        </div>
+
+        <div class="block">
+          <div class="label">Сейчас → дальше <span class="ann">Text</span></div>
+          <div class="card"><div class="title">Договориться, что рисует доска</div><div class="why">дальше: переверстать виды по макету</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 2. ПОЧЕМУ ============ -->
+    <div class="col">
+      <h2>2 · Почему</h2>
+      <p class="q">«Почему Claude сделал так? Что пробовали? Что решили и кто?»</p>
+      <div class="pane">
+        <div class="pane-title"><span>Доска сессии</span><span>⤢ ✕</span></div>
+        <div class="tabs"><span class="tab"><span class="key">1</span>Сейчас</span><span class="tab on"><span class="key">2</span>Почему</span><span class="tab"><span class="key">3</span>История</span><span class="tab"><span class="key">4</span>Спросить</span></div>
+        <div class="row" style="margin:-2px 0 12px"><span class="select">Цель: Доска сессии ⌄</span><span class="ann">Select</span></div>
+
+        <div class="block">
+          <div class="label">Вопрос → что пробовали → решение <span class="ann">Svg: цепочка</span></div>
+          <div class="chain">
+            <div class="node"><span class="pill" style="background:rgba(143,123,255,.16);color:var(--q)">вопрос</span> <span class="title">Чем рисовать доску в панели?</span></div>
+            <div class="branch">
+              <div class="node dead" style="border-left-color:var(--hyp)"><span class="pill" style="background:rgba(139,147,161,.18);color:var(--hyp)">тупик</span> <span class="t">Svg-дерево как главная карта</span><div class="why">мелко, белые поля, мигает при перерисовке — spike</div></div>
+              <div class="node dead" style="border-left-color:var(--hyp)"><span class="pill" style="background:rgba(139,147,161,.18);color:var(--hyp)">тупик</span> <span class="t">Только текстовые строки</span><div class="why">слипается, не наглядно — твой отзыв</div></div>
+              <div class="node" style="border-left-color:var(--find)"><span class="pill" style="background:rgba(224,165,38,.16);color:var(--find)">проверяем</span> Svg-виджеты под ширину панели + родные кнопки<div class="why">этот макет</div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="block">
+          <div class="label">Решения <span class="ann">Text · Button «подробнее»</span></div>
+          <div class="card"><div class="row"><span class="pill" style="background:rgba(239,107,85,.16);color:var(--dec)">решил ты</span><div class="grow title">Публичный GitHub oshnilia/claude-plugins</div></div><div class="why">отвергли: приватный, только локально · цена: код открыт</div></div>
+          <div class="card"><div class="row"><span class="pill" style="background:rgba(239,107,85,.16);color:var(--dec)">решил ты</span><div class="grow title">Журнал на английском для Claude, доска на русском</div></div><div class="why">отвергли: всё на английском, Haiku · цена: fork на каждый ход</div></div>
+          <div class="card"><div class="row"><span class="pill" style="background:rgba(91,140,255,.16);color:var(--goal)">решил Claude</span><div class="grow title">Мод рисует только родными элементами, Client не используем</div></div><div class="why">Client не загрузился в desktop · можно отменить</div><div class="btns"><span class="btn">Отменить решение</span><span class="btn plain">почему ▸</span></div></div>
+        </div>
+
+        <div class="block">
+          <div class="label">Твои правила <span class="ann">Text</span></div>
+          <div class="card"><div class="row"><span class="pill" style="background:rgba(181,123,255,.16);color:var(--rule)">правило</span><div class="grow">Сначала только моды. HTML — запасной путь для того, что на модах не работает.</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 3. ИСТОРИЯ ============ -->
+    <div class="col">
+      <h2>3 · История</h2>
+      <p class="q">«Что происходило? Куда ушли силы? Что менялось?»</p>
+      <div class="pane">
+        <div class="pane-title"><span>Доска сессии</span><span>⤢ ✕</span></div>
+        <div class="tabs"><span class="tab"><span class="key">1</span>Сейчас</span><span class="tab"><span class="key">2</span>Почему</span><span class="tab on"><span class="key">3</span>История</span><span class="tab"><span class="key">4</span>Спросить</span></div>
+
+        <div class="block">
+          <div class="label">Усилия по ходам <span class="ann">Svg: столбики</span></div>
+          <div class="card">
+            <div class="spark"><i style="height:18%"></i><i style="height:40%"></i><i style="height:30%"></i><i style="height:95%"></i><i class="err" style="height:55%"></i><i style="height:70%"></i></div>
+            <div class="meta" style="display:flex;justify-content:space-between;margin-top:4px"><span>ход 1</span><span>красный — были ошибки</span><span>ход 6</span></div>
+          </div>
+        </div>
+
+        <div class="block">
+          <div class="label">Ходы <span class="ann">Text + Button ◀ ▶</span></div>
+          <div class="tl">
+            <div class="card"><div class="row"><div class="grow title">Ход 6 · переделать вид доски</div><span class="meta">08:31</span></div><div class="why">Сделал перевёрстку, ты сказал: слипается и не наглядно.</div><div class="btns"><span class="pill" style="background:rgba(139,147,161,.18);color:var(--hyp)">+ тупик</span><span class="pill" style="background:rgba(52,178,123,.16);color:var(--task)">2 файла</span></div></div>
+            <div class="card"><div class="row"><div class="grow title">Ход 5 · «вёрстка отвратительная»</div><span class="meta">08:21</span></div><div class="why">Изучил доки по модам, переписал строки и вкладки.</div></div>
+            <div class="card empty"><div class="row"><div class="grow title">Ход 4 · ошибка h is not a function</div><span class="meta">08:13</span></div><div class="why">Нашёл перекрытую переменную, починил. <i>не на карте</i></div></div>
+          </div>
+          <div class="btns"><span class="btn">◀ раньше</span><span class="btn">▶ проиграть</span><span class="btn">позже ▶</span></div>
+        </div>
+
+        <div class="block">
+          <div class="label">Файлы, которые менялись <span class="ann">Text · Svg: клетки по ходам</span></div>
+          <div class="card files">
+            <div class="f"><span>session-board/hooks/register.tsx</span><span class="cells"><i></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span></div>
+            <div class="f"><span>session-board/hooks/ledger.ts</span><span class="cells"><i></i><i class="on"></i><i></i><i></i><i></i><i></i></span></div>
+            <div class="f"><span>docs/mod-design.md</span><span class="cells"><i></i><i></i><i></i><i></i><i class="on"></i><i class="on"></i></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ============ 4. СПРОСИТЬ ============ -->
+    <div class="col">
+      <h2>4 · Спросить</h2>
+      <p class="q">«Объясни мне это — не трогая саму сессию»</p>
+      <div class="pane">
+        <div class="pane-title"><span>Доска сессии</span><span>⤢ ✕</span></div>
+        <div class="tabs"><span class="tab"><span class="key">1</span>Сейчас</span><span class="tab"><span class="key">2</span>Почему</span><span class="tab"><span class="key">3</span>История</span><span class="tab on"><span class="key">4</span>Спросить</span></div>
+
+        <div class="block">
+          <div class="input"><span class="l">Вопрос</span><span class="ph">например: что ты решил без меня?</span><span class="s">⏎ спросить</span></div>
+          <div class="label" style="margin-top:12px">Быстрые вопросы <span class="ann">Button secondary</span></div>
+          <div class="btns" style="margin-top:0"><span class="btn">Что сделано за час?</span><span class="btn">Что ты решил сам?</span><span class="btn">Что может сломаться?</span><span class="btn">Объясни схемой</span></div>
+        </div>
+
+        <div class="block">
+          <div class="label">Ответ <span class="ann">Markdown · Svg если нужна схема</span></div>
+          <div class="card md">
+            <div class="meta">› что ты решил без меня?</div>
+            <p><b>Два решения принял я сам, оба можно отменить.</b></p>
+            <ul><li>Не использую Client-модуль: он не загрузился в desktop (spike, п. 4).</li><li>Карту рисую не одним Svg-деревом, а виджетами: дерево было мелким и мигало.</li></ul>
+            <div class="btns"><span class="btn plain">проще</span><span class="btn plain">схемой</span><span class="btn plain">проверь меня</span><span class="ann">Button plain</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="band">
+    <h2 style="font-size:15px;margin:0 0 4px">Полоса над промптом</h2>
+    <p class="q" style="color:var(--dim);font-size:13px;margin:0 0 10px">Видна всегда. Одна строка: главное + что ждёт тебя.</p>
+    <div class="bandbar"><span style="color:var(--goal)">◆</span><span class="grow">Маркетплейс и legible готовы. Доска: дизайн видов.</span><span class="pill" style="background:rgba(255,147,48,.16);color:var(--open)">нужен ты · 2</span><span class="btn plain">доска</span><span class="ann">Text + Button plain</span></div>
+  </div>
+
+  <div class="legend">
+    <b>Как это собирается из элементов мода.</b> Вкладки — <code>Button plain hotkey</code>. Главное действие блока — <code>Button variant="primary"</code>, одно на блок.
+    Вторичные — <code>Button</code> по умолчанию; «подробнее ▸», «проще», «схемой» — <code>Button plain</code>. Ответ на вопрос — <code>Input</code> с <code>submitLabel</code>, открывается по кнопке.
+    Фильтр по цели — <code>Select</code>. Метки «решение», «тупик» — <code>Text backgroundColor</code>. Полосы прогресса, цепочка «почему», столбики усилий и клетки файлов — <code>Svg</code>-картинки, перерисовываются только когда меняется журнал.
+    Ответы в «Спросить» — <code>Markdown</code>.
+  </div>
+</div>
+</body>
+</html>

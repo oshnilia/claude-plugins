@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "session-board",
+  "version": "0.1.0",
+  "description": "Desktop mod: a live board next to the session - a pyramid summary, an outline map, turns, decisions and open questions - plus a session ledger that Claude reads back after compaction.",
+  "author": {
+    "name": "Ilia",
+    "url": "https://github.com/oshnilia"
+  },
+  "homepage": "https://github.com/oshnilia/claude-plugins/tree/main/plugins/session-board",
+  "repository": "https://github.com/oshnilia/claude-plugins",
+  "license": "MIT",
+  "keywords": [
+    "mod",
+    "desktop",
+    "session",
+    "ledger",
+    "minto",
+    "observability"
+  ],
+  "types": "./types/index.d.ts",
+  "userConfig": {
+    "update": {
+      "type": "string",
+      "title": "When to update the map",
+      "description": "every-turn: after each turn with real work (uses a fork of the session, read from cache). manual: only on /board-update.",
+      "options": [
+        "every-turn",
+        "manual"
+      ],
+      "default": "every-turn"
+    },
+    "minTools": {
+      "type": "number",
+      "title": "Minimum tool calls per turn before the map updates",
+      "description": "Turns with fewer tool calls skip the model call and only record the turn.",
+      "default": 2,
+      "min": 0,
+      "max": 50
+    },
+    "autoOpen": {
+      "type": "boolean",
+      "title": "Open the board when the session starts",
+      "default": true,
+      "description": "Open the board pane when an interactive session starts."
+    },
+    "injectAfterCompact": {
+      "type": "boolean",
+      "title": "Give Claude the ledger brief after compaction",
+      "default": true,
+      "description": "After compaction, append the ledger brief so Claude keeps decisions, constraints and dead ends."
+    }
+  }
+}
