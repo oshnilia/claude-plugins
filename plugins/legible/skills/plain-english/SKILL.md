@@ -1,60 +1,58 @@
 ---
 name: plain-english
-description: Write English in a controlled, plain technical style inspired by ASD-STE100, at a measurable strictness (plain-50, plain-80 default, plain-100). Use when the user asks for plain, simple or clear English, STE, ASD-STE100, controlled English or "80% STE", and when you write text that a busy reader or another agent must parse fast - summaries, PR descriptions, docs, error messages, status updates.
+description: Write English in ASD-STE100 Simplified Technical English at a chosen strictness - 80% of the way to ASD-STE100 by default, 50% or 100% on request. Use when the user asks for ASD-STE100, STE, Simplified Technical English, "80% of the way to ASD-STE100", or for plain, simple, clear or controlled English; when the user asks to clean up, simplify or rewrite text in plain English (a PR description, docs, a summary, a status update, an error message); and when you write text that a busy reader or another agent must parse fast.
 license: MIT
 metadata:
-  version: 0.1.1
+  version: 0.2.0
 ---
 
-# Plain English (inspired by ASD-STE100)
+# Plain English: ASD-STE100, 80% of the way
 
-This style is inspired by ASD-STE100. It is not certified and does not claim compliance.
-ASD-STE100 is a trademark of ASD. Do not say that a text "complies with ASD-STE100".
+Write in **ASD-STE100 Simplified Technical English**. You know this standard: its writing rules and its approved
+words, each with one meaning. Use that knowledge. The level sets how far you go:
 
-## Levels
-
-| Level | Use for | What changes |
+| Level | Ask yourself for | Use for |
 |---|---|---|
-| plain-50 | chat, light polish | short sentences, no semicolons, active voice |
-| **plain-80** (default) | answers, docs, PRs, summaries | + the structural rules below |
-| plain-100 | procedures, safety text, agent-to-agent text | + no -ing forms, no perfect tenses, only can/will/must, no wordy words |
+| plain-50 | about 50% of the way to ASD-STE100 | chat, a light polish |
+| **plain-80** (default) | 80% of the way to ASD-STE100 | answers, docs, PRs, summaries |
+| plain-100 | ASD-STE100 in full: its rules and its approved words only | procedures, safety text, agent-to-agent text |
 
-## Rules for plain-80
+At plain-80 the sentences follow STE, but the text still reads like normal prose: keep a precise technical word when
+the approved word would lose meaning. At plain-100 use only words you know to be approved, and only can, will or must.
 
-1. Put the answer first. Then give the reasons.
-2. Keep procedure sentences to 20 words or fewer. Keep description sentences to 25 words or fewer.
-3. Write one instruction per sentence. Use the imperative: "Open the file."
-4. Put the condition before the command: "If the test fails, read the log."
-5. Use the active voice. Say who does the action. If the source does not say who acts, do not invent an actor:
-   make the receiver the subject ("the person on call gets a notification"), or keep the passive for that one sentence.
-6. Use simple tenses: present, past, future.
-7. Use no more than 3 nouns in a row. Break "build cache key generator config" into a phrase with "of" or "for".
-8. Use one verb, not a phrasal verb: "configure", not "set up"; "find", not "find out".
-9. Do not use semicolons or contractions.
-10. Keep one topic per paragraph and no more than 6 sentences.
-11. Use one word for one thing. Do not switch between synonyms for the same item.
-12. Keep code identifiers, file names, commands and product names exactly as they are.
+## What must not change
 
-Do not make the text sound like an aviation manual. Keep the meaning and the hedges ("may", "probably") when they carry real uncertainty.
-Keep every fact of the source, and add none: the rewrite must not say more than the source says.
+1. Keep every fact of the source and add none. The rewrite does not say more than the source.
+2. Do not invent who acts. If the source names no actor, make the receiver the subject ("the person on call gets a
+   notification"), use an imperative step, or keep the passive for that one sentence. Never "we", "the system".
+3. Keep the strength of every hedge at plain-50 and plain-80: "should probably fix" stays "probably fixes", "may have
+   failed" stays. At plain-100, keep the uncertainty with "can" or a word such as "possibly".
+4. Keep code identifiers, file names, commands and product names exactly as they are.
+5. Put the answer first. Then the reasons.
 
-## What to output for a rewrite
+## What to output
 
-Give the rewritten text only. Do not add a list of changes unless the user asks why: a change list quotes the
-words you removed, and the reader must not find them again. Do not explain what you could not run.
+- The text only. No preamble, no list of changes, no rule table, unless the user asks why.
+- If you kept a longer phrase on purpose because a shorter one loses precision, add one last line:
+  `Kept as-is: "<phrase>" - <what would be lost>`. Leave the line out when there is nothing to report.
+- At plain-100, mark each sentence where you had to break a rule with `‡`, and end with one line
+  `STE deviations: <rule> - <why>`.
+- Never say or imply that a text complies with ASD-STE100, conforms to it or is certified. ASD-STE100 is a trademark of
+  ASD. You may say "written to ASD-STE100, 80% of the way".
+- Write your own words in the same style: no contractions, no semicolons, in any note you add.
 
-## Measure, then fix
+## Measure, if you have a shell
 
-Run the scorer on your draft when the text is longer than a few sentences or the user asked for a level:
+When a shell tool (Bash) is available and the user asked for a level or a score, run the structural scorer and fix
+what it reports:
 
 ```bash
 python3 "${CLAUDE_SKILL_DIR}/scripts/ste_score.py" --level 80 draft.md
 ```
 
-Use `-` to read from stdin. Use `--json` for machine output. Fix each violation, then run it again.
-The scorer checks only structure. It cannot check word meaning, so read the text once more yourself.
+Use `-` for stdin and `--json` for machine output. Then end with one line: `plain-80: 92%`.
 
-When the user asked for a level and you ran the scorer, end with one line: `plain-80: 92%`.
-When you cannot run it (no shell), leave the line out. Do not guess a number.
+When there is no shell tool, do not try to run the scorer in any other way, do not start a subagent for it, and say
+nothing about it. Give no number. The scorer checks only sentence structure. It cannot check words.
 
-Full rule list in our own words, with what the script can and cannot check: [references/rules.md](references/rules.md).
+Rules in our own words, with what the scorer checks: [references/rules.md](references/rules.md).

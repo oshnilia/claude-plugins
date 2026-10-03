@@ -3,7 +3,7 @@ name: visual-explainer
 description: Build a one-off visual explanation for a complex topic - an overview-first, drill-down explanation with diagrams, rendered natively in the session board pane, or as a single HTML file only when the user asks for HTML. Use when the user asks to explain how something works in depth, wants an explainer, an interactive explanation, "объясни наглядно", "сделай визуализацию", or when a topic has several interacting parts that text and one diagram cannot carry.
 license: MIT
 metadata:
-  version: 0.1.0
+  version: 0.2.0
 ---
 
 # Visual explainer
@@ -32,9 +32,16 @@ overview. Pass `title`, `markdown` (plain-80 / plain-ru-80, max 10,000 character
 `svg`. Interactive SVG works there: CSS `:hover` to highlight a path, SMIL `<animate>` for motion, `<title>` for
 tooltips. Scripts and event handlers do not run. Max 131,072 characters per SVG.
 
-**HTML — only when the user asks for HTML or a page**: write one self-contained file (inline CSS and JS, no CDN)
-to `explainers/<slug>.html` in the project, then tell the user the path. Keep the same pyramid: answer on top,
-key parts as sections, details behind a click.
+**HTML — only when the user asks for HTML or a page, or presses HTML on the board**: write one self-contained file
+to `explainers/<slug>.html` in the project, then tell the user the path in one line.
+- Same pyramid: the answer at the top, the key parts as sections, details behind `<details>` or a click.
+- Page shape for a concept: question → intuition → mechanism → edge cases → what to remember.
+- One claim per figure. Give each figure a caption "Fig. N - <the claim>".
+- Inline SVG, inline CSS and inline JS only. No CDN, no web fonts, no images from the network. Put
+  `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">`
+  in the head.
+- Interactions that help: hover to highlight a path, a toggle between two states, a slider for one parameter.
+- For motion step by step, use the `animated-explainer` skill instead.
 
 **No board and no HTML request**: answer in chat with the pyramid as headings, one Mermaid diagram per key part.
 
