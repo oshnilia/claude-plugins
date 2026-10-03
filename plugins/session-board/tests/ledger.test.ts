@@ -90,6 +90,19 @@ test('the report shows criteria, escapes text and embeds no external scripts', a
   expect(html.includes('<script src')).toBe(false)
 })
 
+test('the report embeds the session as data a title cannot break out of', async () => {
+  let L = emptyLedger('s1')
+  L = applyOps(L, [
+    { op: 'add', kind: 'goal', title: { en: 'Ship', ru: 'Выпустить' } },
+    { op: 'add', kind: 'decision', parent: 'G1', status: 'accepted', title: { en: 'x', ru: '</script><script>alert(1)</script>' } },
+  ], 1, 'claude').ledger
+  const html = renderReport(L, { stat: '', files: [{ path: 'a.ts', patch: '+one\n-two', isNew: false }] }, '2026-10-03T10:00:00.000Z')
+  expect(html.includes('<script>alert(1)')).toBe(false)
+  expect(html).toContain('id="report-data"')
+  expect(html).toContain('Развилки и тупики')
+  expect(html).toContain('+1 −1')
+})
+
 test('a brief over several goals adds its own goal and keeps theirs', async () => {
   let L = emptyLedger('s1')
   L = applyOps(L, [

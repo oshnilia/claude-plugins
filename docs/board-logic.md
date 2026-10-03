@@ -81,16 +81,22 @@ The cartographer then marks each one answered, or opens it again.
 what only the person can do now (`for_you`), verification steps, what is not done and what is next.
 Every Russian field is written for a person who did not watch the session: the result first, short sentences,
 no ledger ids, paths, run ids or tool names. Ids and commands go to the evidence, which the screen folds away.
-The board writes `report.html` into the task folder: one self-contained page (no network) with
+The board writes `report.html` into the task folder: one self-contained page (no network, system fonts). It does not
+repeat the pane: the pane is for the verdict, the report is for understanding the session.
 
-1. the verdict first: "proven 4 of 5 criteria", the summary, counts;
-2. criteria with evidence, not done, risks, next steps;
-3. what changed: `git diff` since Start, per file;
-4. decisions (Claude's own first, with rejected options), assumptions, dead ends, rules;
-5. the reasoning map: an interactive tree with filters and search;
-6. the turns, with a player (buttons and ← →) that lights up the nodes of each turn;
-7. how to check it yourself, with copy buttons.
+1. The top answers "can I accept?": the verdict in one line with one square per criterion, the summary, "Нужно от тебя".
+2. The route map is the centre. Each goal is a coloured line from left to right across the turns; its direct items are
+   stations, deeper items hang on branches. Decisions are interchange rings, dead ends are grey stop bars, criteria are
+   squares that turn green when proven. A busy turn gets a wider column, so the map shows where the work went.
+3. Motion has one job: on open the session draws itself turn by turn (about four seconds), and "Проиграть сессию"
+   replays it. The turn axis is a scrubber, ← and → step through turns, and the card under the map tells each turn:
+   what was asked, what was done, what appeared.
+4. A click on a station dims everything outside its lineage and opens the details: statement, status, for a decision
+   why, what was chosen, what was rejected and at what cost, the evidence, where it came from, what is inside, its turn.
+5. Below the map: "Развилки и тупики" in time order (a click finds the station on the map), "Что проверено" with the
+   proof folded, "Что изменилось" with a bar per file and the diff on click, not done, risks, next, how to check.
 
+Reduced motion shows the final map at once. On a phone the map scrolls sideways and the details open as a bottom sheet.
 The verdict lives in the pane, not in the report: a local page cannot write into the session.
 
 ## The verdict

@@ -115,9 +115,15 @@ test('intake, start, hand-in and a returned verdict', async $ => {
   expect(await rv.find({ text: /claude plugin test: 8 pass/ })).toBeDefined()
   expect(await rv.find({ key: 'v-ok-K1' })).toBeUndefined()
   expect(await rv.find({ key: 'v-accept' })).toBeDefined()
+  // no fixes yet: "accept with fixes" would send an empty list
+  expect(await rv.find({ key: 'v-fixes' })).toBeUndefined()
   await rv.press({ key: 'v-no-K2' })
+  expect(await rv.find({ key: 'v-fixes' })).toBeDefined()
   await rv.press({ key: 'v-c-K2' })
+  // a remark being typed holds the verdict back
+  expect(await rv.find({ key: 'v-accept' })).toBeUndefined()
   await $.ui.input({ plugin: 'session-board', key: 'cf-K2-in', text: 'полоса пустая без задачи' })
+  expect(await rv.find({ key: 'v-accept' })).toBeDefined()
   expect(await rv.find({ text: /твой комментарий: полоса пустая без задачи/ })).toBeDefined()
   await rv.press({ key: 'rule-0' })
   expect(await rv.find({ text: /станет правилом проекта/ })).toBeDefined()

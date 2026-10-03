@@ -588,6 +588,8 @@ export function ReviewView(els: Els, d: Data, a: Actions) {
   const assumptions = L.nodes.filter(n => n.kind === 'assumption' && !isClosed(n))
   const risks = L.nodes.filter(n => n.kind === 'risk' && !['lifted', 'done'].includes(n.status) && !gone(n))
   const remarks = ruleCandidates(d.verdict)
+  // a fix is a remark or an item marked wrong; "accept with fixes" needs at least one
+  const fixes = remarks.length + Object.values(d.verdict.marks).filter(m => m === 'no').length
   const forYou = sub?.forYou ?? []
   const verifyOpen = d.expanded.includes('rv-verify')
   return (
@@ -633,12 +635,23 @@ export function ReviewView(els: Els, d: Data, a: Actions) {
         ? Field(els, 'general', 'Замечание', 'общее замечание по работе', 'добавить', v => a.addGeneral(v), () => a.edit(''))
         : ActionBar(els, 'rem-a', [<Button key="rem-add" plain label="+ общее замечание" onPress={() => a.edit('general')} />])}
       {Rule(els, 'r-rv-final', 'Вердикт')}
-      {Para(els, 'rv-hint', 'Всё выше уйдёт Claude одним сообщением.', true)}
-      {d.sent.includes('verdict') ? Para(els, 'rv-sent', '✓ Вердикт отправлен, Claude отвечает…', true) : ActionBar(els, 'rv-final', [
-        <Button key="v-accept" label="Принять" variant="primary" onPress={() => a.sendVerdict('accept')} />,
-        <Button key="v-fixes" label="Принять с правками" onPress={() => a.sendVerdict('fixes')} />,
-        <Button key="v-return" label="Вернуть" onPress={() => a.sendVerdict('return')} />,
-      ])}
+      {d.sent.includes('verdict')
+        ? Para(els, 'rv-sent', '✓ Вердикт отправлен, Claude отвечает…', true)
+        : d.editing.startsWith('c:') || d.editing === 'general'
+          // an Input keeps its text to itself: a verdict sent now would lose the remark being typed
+          ? Para(els, 'rv-hint', 'Сначала сохрани или отмени замечание, потом выбери вердикт.', true)
+          : (
+            <Box flexDirection="column">
+              {Para(els, 'rv-hint', fixes
+                ? `Правки (${fixes}) уйдут Claude одним сообщением.`
+                : 'Правок нет. «Принять с правками» появится, когда отметишь что-то «не так» или оставишь комментарий.', true)}
+              {ActionBar(els, 'rv-final', [
+                <Button key="v-accept" label="Принять" variant="primary" onPress={() => a.sendVerdict('accept')} />,
+                fixes ? <Button key="v-fixes" label="Принять с правками" onPress={() => a.sendVerdict('fixes')} /> : null,
+                <Button key="v-return" label="Вернуть" onPress={() => a.sendVerdict('return')} />,
+              ])}
+            </Box>
+          )}
     </Box>
   )
 }
