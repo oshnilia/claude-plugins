@@ -919,8 +919,8 @@ export function Board(els: Els, d: Data, a: Actions) {
 // ---------- the band above the prompt: one state, one action ----------
 
 /** fixes: remarks and "не так" marks drafted on the Acceptance screen */
-export type BandData = { ledger: Ledger; mapping: boolean; mappingNote: string; cols: number; fixes: number }
-export type BandActions = { open: (view: string) => void; accept: () => void }
+export type BandData = { ledger: Ledger; mapping: boolean; mappingNote: string; cols: number; fixes: number; ladder?: { id: string; label: string; text: string }[] }
+export type BandActions = { open: (view: string) => void; accept: () => void; rung?: (text: string) => void }
 
 export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act: BandActions) {
   const { Box, Text, Button } = els
@@ -950,8 +950,8 @@ export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act
           : phase === 'review' ? { label: 'Принять работу', press: () => act.accept() }
             : null
   // the band draws its own collapse mark at the right edge: leave it room
-  return (
-    <Box flexDirection="row" justifyContent="space-between" columnGap={2} paddingRight={4}>
+  const row = (
+    <Box key="band-row" flexDirection="row" justifyContent="space-between" columnGap={2} paddingRight={4}>
       <Box flexDirection="row" columnGap={1} flexShrink={1} minWidth={0}>
         <Box flexShrink={0}><Text color={state.color}>{state.mark}</Text></Box>
         <Box flexShrink={1} minWidth={0}><Text wrap="truncate-end" bold={!b.mapping} dimColor={b.mapping}>{clip(state.text)}</Text></Box>
@@ -961,6 +961,18 @@ export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act
         {main ? <Button key="band-main" label={main.label} variant="primary" onPress={main.press} /> : null}
         {phase === 'review' && !waiting && !b.fixes ? <Button key="band-review" plain label="посмотреть" onPress={() => act.open('review')} /> : null}
         <Button key="band-open" plain label="доска" onPress={() => act.open('')} />
+      </Box>
+    </Box>
+  )
+  const rungs = b.ladder ?? []
+  if (!rungs.length || !act.rung) return row
+  // under a long answer: the same content one rung up Karpathy's format ladder
+  return (
+    <Box flexDirection="column">
+      {row}
+      <Box key="ladder-row" flexDirection="row" columnGap={2} alignItems="center" paddingRight={4}>
+        <Text dimColor>показать иначе:</Text>
+        {rungs.map(r => <Button key={`ladder-${r.id}`} plain label={r.label} onPress={() => act.rung!(r.text)} />)}
       </Box>
     </Box>
   )

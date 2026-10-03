@@ -209,3 +209,48 @@ test('the band accepts the work in one press when there are no fixes', async $ =
   await band.unmount()
   expect((await $.tool.call({ tool: 'mcp__session-board__ledger_read', section: 'task' })).text).toContain('фаза: accepted')
 })
+
+test('a long answer shows the format ladder; a press sends the request and takes it down', async ($, on) => {
+  const asked: string[] = []
+  on('prompt.submit', async (_$, e) => {
+    asked.push(e.text)
+    return { text: e.text }
+  })
+  on('turn.complete', async (_$, e) => ({ text: e.answer }))
+  const long = Array.from({ length: 130 }, (_, i) => `word${i}`).join(' ')
+  for (const surface of ['desktop', 'terminal'] as const) {
+    await $.turn.complete({ answer: long, durationMs: 1, isAborted: false, turnId: `t-${surface}`, reason: 'answer' })
+    const band = await $.ui.mount({ plugin: 'session-board', surface, ...BAND })
+    expect(await band.find({ text: /показать иначе/ })).toBeDefined()
+    expect(await band.find({ key: 'ladder-ste' })).toBeDefined()
+    expect(await band.find({ key: 'ladder-diagram' })).toBeDefined()
+    expect(await band.find({ key: 'ladder-animate' })).toBeDefined()
+    await band.press({ key: 'ladder-html' })
+    expect(await band.find({ key: 'ladder-html' })).toBeUndefined()
+    // the state line of the band stays
+    expect(await band.find({ key: 'band-open' })).toBeDefined()
+    await band.unmount()
+  }
+  expect(asked.length).toBe(2)
+  expect(asked[0]).toContain('HTML-страницу')
+
+  // a short answer, an interrupted turn and code-only output show no ladder
+  const code = '```\n' + long + '\n```'
+  for (const end of [
+    { answer: 'Порт 443.', isAborted: false, reason: 'answer' as const },
+    { answer: long, isAborted: true, reason: 'aborted' as const },
+    { answer: code, isAborted: false, reason: 'answer' as const },
+  ]) {
+    await $.turn.complete({ ...end, durationMs: 1, turnId: 'short' })
+    const band = await $.ui.mount({ plugin: 'session-board', surface: 'desktop', ...BAND })
+    expect(await band.find({ key: 'ladder-html' })).toBeUndefined()
+    await band.unmount()
+  }
+
+  // a new message from the person takes the ladder down
+  await $.turn.complete({ answer: long, durationMs: 1, isAborted: false, turnId: 'again', reason: 'answer' })
+  await $.prompt.submit({ text: 'Спасибо', origin: { kind: 'composer' } })
+  const band = await $.ui.mount({ plugin: 'session-board', surface: 'desktop', ...BAND })
+  expect(await band.find({ key: 'ladder-html' })).toBeUndefined()
+  await band.unmount()
+})

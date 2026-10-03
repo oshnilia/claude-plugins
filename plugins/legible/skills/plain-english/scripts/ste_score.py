@@ -7,7 +7,8 @@ use the ASD dictionary and checks only structural rules that a script can see.
 Levels:
   50  light   - long sentences, semicolons, passive voice, long paragraphs
   80  default - adds contractions, phrasal verbs, noun clusters, one instruction
-                per sentence, condition before command
+                per sentence, condition before command, marketing words, actions
+                hidden in nouns, synonym rotation (one word for one action)
   100 strict  - adds -ing forms, perfect tenses, weak modals, wordy words
 
 Score = share of sentences with no violation at the chosen level.
@@ -88,6 +89,38 @@ WORDY = {
     "in order to": "to", "prior to": "before", "in the event that": "if", "due to the fact that": "because",
     "at this point in time": "now", "a number of": "some", "leverage": "use", "implement": "make",
 }
+
+# Words that claim quality instead of showing it.
+MARKETING_RE = re.compile(
+    r"\b(?:seamless(?:ly)?|robust(?:ly)?|effortless(?:ly)?|cutting-edge|state-of-the-art|world-class|best-in-class|"
+    r"blazing[- ]fast|game-chang(?:ing|er)|revolutionary|next-generation|supercharge[sd]?)\b",
+    re.I,
+)
+# An action hidden in a noun: "perform an analysis of" -> "analyze".
+NOMINAL_RE = re.compile(
+    r"\b(?:perform(?:s|ed|ing)?|conduct(?:s|ed|ing)?|carr(?:y|ies|ied|ying) out|undertak(?:e|es|ing)|undertook|"
+    r"effect(?:s|ed)?|make(?:s)? an?|made an?)\s+(?:a\s+|an\s+|the\s+)?\w+(?:tion|sion|ment|ance|ence|ysis)\b",
+    re.I,
+)
+# One word for one thing: verbs that writers rotate for the same action.
+SYNONYMS = [
+    ("check", "verify", "confirm", "validate"),
+    ("delete", "remove", "erase"),
+    ("start", "launch", "begin", "initiate"),
+    ("stop", "halt", "terminate"),
+    ("show", "display"),
+    ("get", "retrieve", "fetch", "obtain"),
+    ("change", "modify", "alter"),
+    ("send", "transmit"),
+]
+
+
+def _forms(verb: str) -> str:
+    stem = verb[:-1] if verb.endswith("e") else verb
+    return rf"(?:{verb}|{verb}s|{verb}d|{verb}ed|{stem}ing|{stem}ed)"
+
+
+SYNONYM_RE = [[(m, re.compile(rf"\b{_forms(m)}\b", re.I)) for m in g] for g in SYNONYMS]
 
 CODE_FENCE_RE = re.compile(r"```.*?```", re.S)
 INLINE_CODE_RE = re.compile(r"`[^`]*`")
@@ -171,6 +204,12 @@ def check_sentence(s: str, level: int) -> list[str]:
             longest = max(longest, run)
         if longest >= 4:
             v.append(f"noun cluster: {longest} words in a row - max 3")
+        m = MARKETING_RE.search(s)
+        if m:
+            v.append(f"marketing word: '{m.group(0)}' - delete it or give the number that proves it")
+        m = NOMINAL_RE.search(s)
+        if m:
+            v.append(f"action as a noun: '{m.group(0)}' - use the verb")
         if proc:
             body = s.split(",", 1)[1] if s.lower().startswith(("if ", "when ", "before ", "after ", "unless ")) else s
             if re.search(r"\b(?:and then|, then|then)\s+[a-z]+", body) or re.search(
@@ -209,6 +248,19 @@ def score(text: str, level: int = 80) -> dict:
             para_issues.append({"paragraph": i + 1, "sentences": len(block), "rule": "paragraph: max 6 sentences"})
         for s in block:
             results.append({"sentence": s, "violations": check_sentence(s, level)})
+    if level >= 80:
+        first: dict[int, str] = {}
+        for r in results:
+            for gi, group in enumerate(SYNONYM_RE):
+                for member, rx in group:
+                    if rx.search(r["sentence"]):
+                        if gi not in first:
+                            first[gi] = member
+                        elif first[gi] != member:
+                            r["violations"].append(
+                                f"synonym rotation: '{member}' after '{first[gi]}' - use one word for one action"
+                            )
+                        break
     total = len(results)
     clean = sum(1 for r in results if not r["violations"])
     value = clean / total if total else 1.0
@@ -248,6 +300,11 @@ SELF_TESTS = [
     ("We utilize the cache.", 100, 0.0),
     ("We use the cache.", 100, 1.0),
     ("```\nthis code is ignored; was written by me\n```\nRun the tests.", 80, 1.0),
+    ("Our seamless pipeline deploys the app.", 80, 0.0),
+    ("Perform an analysis of the log.", 80, 0.0),
+    ("Check the log. Verify the config.", 80, 0.5),
+    ("Check the log. Check the config.", 80, 1.0),
+    ("The request may have failed.", 80, 1.0),
 ]
 
 

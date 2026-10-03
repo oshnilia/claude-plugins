@@ -7,9 +7,9 @@
     {
       "name": "legible",
       "source": "./plugins/legible",
-      "description": "Answer formats for understanding: plain English and plain Russian at a measurable strictness, diagram-first, visual explainers, teach-back.",
+      "description": "Answer formats for understanding, after Karpathy's format ladder: ASD-STE100 text, diagrams, HTML explainers, animated step players, teach-back.",
       "category": "productivity",
-      "tags": ["writing", "diagrams", "explain", "plain-language"]
+      "tags": ["writing", "ASD-STE100", "diagrams", "explain", "plain-language"]
     },
     {
       "name": "session-board",

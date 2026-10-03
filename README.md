@@ -7,7 +7,7 @@ a session into a task with a brief at the start and an acceptance at the end.
 | Plugin | What it does | Where it works |
 |---|---|---|
 | [`session-board`](plugins/session-board) | A mod for people who run many sessions at once. Two touches per task: a brief with criteria and authority at the start, an Acceptance screen and an interactive HTML report at the end; Claude works alone in between. The task folder keeps the ledger, so compaction loses nothing. Board texts are in Russian. | Claude Code desktop (Code tab) and terminal |
-| [`legible`](plugins/legible) | Plain English and plain Russian at a measurable strictness, diagram-first answers, visual explainers, teach-back checks | Claude Code; the skills also work on claude.ai |
+| [`legible`](plugins/legible) | Karpathy's format ladder: ASD-STE100 text and plain Russian at a measurable strictness, diagram-first answers, HTML explainers, animated step players, teach-back checks | Claude Code; the skills also work on claude.ai |
 
 ## Install
 
@@ -75,8 +75,8 @@ How the board works: [docs/board-logic.md](docs/board-logic.md).
 - `docs/` — references, the board logic, the ledger spec, the security audit.
 - `scripts/sync-dev-mod.sh` — copy a mod from a hot-reload folder into the repo, then validate and test it.
 
-ASD-STE100 is a trademark of ASD. legible is inspired by it, does not ship its dictionary and does not claim
-compliance. License: [MIT](LICENSE).
+ASD-STE100 is a trademark of ASD. legible asks the model to write in its style, does not ship or read its dictionary
+and never claims compliance. License: [MIT](LICENSE).
 
 ---
 
@@ -88,8 +88,8 @@ compliance. License: [MIT](LICENSE).
   вводными (цель, результат, пункты «готово, когда», полномочия), в конце приёмка одним вердиктом и интерактивный
   отчёт — схема метро всей сессии. Между ними Claude работает сам и зовёт тебя, только когда упёрся. Журнал лежит в
   папке задачи, поэтому сжатие переписки ничего не теряет. Подробно — в [README доски](plugins/session-board/README.md).
-- **legible** — ответы в формате под вопрос: простой технический английский и русский с измеримой строгостью,
-  сначала схема, наглядные объяснения, проверка понимания. Подробно — в [README legible](plugins/legible/README.md).
+- **legible** — лестница форматов Карпаты: текст в ASD-STE100 и простой технический русский с измеримой строгостью,
+  схема, HTML-страница, пошаговая анимация, проверка понимания. Подробно — в [README legible](plugins/legible/README.md).
 
 ### Установка
 

@@ -159,6 +159,7 @@ declare module 'claude-code' {
       policy: Authority
       sent: SentAction[]
       home: { sid: string; dir: string }
+      ladder: boolean
     }
   }
 }

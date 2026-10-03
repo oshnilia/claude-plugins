@@ -8,9 +8,10 @@ Legend: **[S]** = the scorer checks it, **[R]** = you must check it by reading.
 
 ## 1. Words
 - Use common words with one clear meaning. Prefer "use" to "utilize", "start" to "commence", "about" to "approximately". [S at plain-100, small list only]
-- Use one word for one thing in the whole text. Do not switch between synonyms. [R]
+- Use one word for one thing in the whole text. Do not switch between synonyms ("check" here, "verify" there). [S, common verb groups]
 - Technical names (APIs, files, products, commands) are allowed. Keep them exact. [R]
-- Use the verb, not a noun made from it: "configure the server", not "perform the configuration of the server". [R]
+- Use the verb, not a noun made from it: "configure the server", not "perform the configuration of the server". [S, "perform/conduct/carry out + noun"]
+- Do not use words that claim quality: "seamless", "robust", "cutting-edge". Give the number that proves it, or delete the word. [S]
 
 ## 2. Noun clusters
 - Use no more than 3 nouns in a row. Add "of", "for" or a short clause to break longer chains. [S, heuristic]
