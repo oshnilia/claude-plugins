@@ -1,7 +1,7 @@
 ---
 max_turns: 10
 allowed_tools: [Read, Glob, Grep, Skill]
-tags: [plain-russian]
+tags: [core, plain-russian]
 ---
 
 Перепиши понятным техническим русским, без канцелярита, смысл сохрани:

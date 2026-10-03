@@ -1,7 +1,7 @@
 ---
 max_turns: 10
 allowed_tools: [Read, Glob, Grep, Skill]
-tags: [plain-english]
+tags: [core, plain-english]
 ---
 
 Rewrite this in plain technical English, about 80% of the way to ASD-STE100. Keep the meaning.

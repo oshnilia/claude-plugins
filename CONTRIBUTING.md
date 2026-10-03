@@ -22,7 +22,7 @@ Thank you for helping. These plugins run inside other people's Claude Code sessi
    claude plugin validate plugins/<name>
    claude plugin test plugins/session-board
    ```
-   For a change to a legible skill, run `claude plugin eval plugins/legible --no-publish` before and after, and put
+   For a change to a legible skill, run `claude plugin eval plugins/legible --tag core --judge-model sonnet --no-publish` before and after, and put
    both tables in the pull request. Without `--no-publish` the eval report goes to claude.ai. Evals make real model
    calls on your account.
 4. Raise `version` in the plugin's `.claude-plugin/plugin.json` and add a line to [CHANGELOG.md](CHANGELOG.md).
