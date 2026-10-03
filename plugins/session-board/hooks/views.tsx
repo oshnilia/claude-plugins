@@ -918,8 +918,9 @@ export function Board(els: Els, d: Data, a: Actions) {
 
 // ---------- the band above the prompt: one state, one action ----------
 
-export type BandData = { ledger: Ledger; mapping: boolean; mappingNote: string; cols: number }
-export type BandActions = { open: (view: string) => void }
+/** fixes: remarks and "не так" marks drafted on the Acceptance screen */
+export type BandData = { ledger: Ledger; mapping: boolean; mappingNote: string; cols: number; fixes: number }
+export type BandActions = { open: (view: string) => void; accept: () => void }
 
 export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act: BandActions) {
   const { Box, Text, Button } = els
@@ -941,11 +942,13 @@ export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act
         : phase === 'review' ? { mark: '✓', color: GREEN, text: `работа сдана · доказано ${proven} из ${crit.length}` }
           : phase === 'accepted' ? { mark: '✓', color: GREEN, text: `принято: ${t!.title.ru}` }
             : { mark: '●', color: BLUE, text: doing ? doing.title.ru : L.brief?.answer.ru ?? `ход ${L.turns.length}` }
-  const main = waiting ? { key: 'band-main', label: `нужен ты · ${waiting}`, view: 'work' }
-    : phase === 'none' ? { key: 'band-main', label: 'Поставить задачу', view: 'task' }
-      : phase === 'intake' ? { key: 'band-main', label: 'Проверить и начать', view: 'task' }
-        : phase === 'review' ? { key: 'band-main', label: 'Принять работу', view: 'review' }
-          : null
+  // "Принять работу" accepts at once; with drafted fixes the button leads to the Acceptance screen to send them
+  const main: { label: string; press: () => void } | null = waiting ? { label: `нужен ты · ${waiting}`, press: () => act.open('work') }
+    : phase === 'none' ? { label: 'Поставить задачу', press: () => act.open('task') }
+      : phase === 'intake' ? { label: 'Проверить и начать', press: () => act.open('task') }
+        : phase === 'review' && b.fixes ? { label: `Отправить приёмку · правок ${b.fixes}`, press: () => act.open('review') }
+          : phase === 'review' ? { label: 'Принять работу', press: () => act.accept() }
+            : null
   // the band draws its own collapse mark at the right edge: leave it room
   return (
     <Box flexDirection="row" justifyContent="space-between" columnGap={2} paddingRight={4}>
@@ -955,7 +958,8 @@ export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act
       </Box>
       <Box flexDirection="row" columnGap={2} flexShrink={0} alignItems="center">
         {phase === 'work' && tasks.length ? <Text dimColor>{`${done}/${tasks.length} шагов`}</Text> : null}
-        {main ? <Button key={main.key} label={main.label} variant="primary" onPress={() => act.open(main.view)} /> : null}
+        {main ? <Button key="band-main" label={main.label} variant="primary" onPress={main.press} /> : null}
+        {phase === 'review' && !waiting && !b.fixes ? <Button key="band-review" plain label="посмотреть" onPress={() => act.open('review')} /> : null}
         <Button key="band-open" plain label="доска" onPress={() => act.open('')} />
       </Box>
     </Box>

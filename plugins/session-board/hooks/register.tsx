@@ -7,7 +7,7 @@ import { deterministicOps, FILE_TOOLS, liveEvent, targetOf, toolLabel } from './
 import { applyOps, cleanBrief, emptyLedger, parseOp, renderBrief, renderMarkdown, txt, upsertTurn, type Op } from './ledger'
 import { renderReport, type ReportDiff } from './report'
 import {
-  AUTHORITY, briefOps, criteriaOf, emptyVerdict, isAuthority, parseTaskInput, protocol, renderTaskMd, slugify, startMessage,
+  AUTHORITY, briefOps, criteriaOf, emptyVerdict, isAuthority, parseTaskInput, protocol, renderTaskMd, ruleCandidates, slugify, startMessage,
   VERDICT_LABEL, verdictMessage, type VerdictKind,
 } from './task'
 import { Band, Board, resolveView, type Actions, type AddKind, type Data } from './views'
@@ -195,8 +195,15 @@ async function refreshOpenTasks($: EngineInterface) {
 }
 
 /** Open the board pane; a surface without panes (or the test kit) just keeps the state. */
-function openBoard($: EngineInterface) {
-  $.ui.open({ id: PANE, title: TITLE }).catch(() => undefined)
+/** Open the board. When the person asked for it, a pane that cannot be placed says why instead of doing nothing. */
+function openBoard($: EngineInterface, asked = false) {
+  $.ui.open({ id: PANE, title: TITLE })
+    .then(r => {
+      if (asked && !r.isPlaced) $.ui.toast(`Доска ждёт места: ${r.reason}`)
+    })
+    .catch((err: unknown) => {
+      if (asked) $.ui.toast(`Доска не открылась: ${String((err as Error)?.message ?? err).slice(0, 90)}`)
+    })
 }
 
 /** A message from the board into the session, as the person's own. */
@@ -1162,10 +1169,15 @@ export const register: Register = (on, options) => {
     if (e.props.hasSurvey || (e.surface !== 'desktop' && e.surface !== 'terminal')) return next(e)
     const L = await read($, ledger)
     const st = await read($, status)
-    return Band($.ui.resolve(e), { ledger: L, mapping: st.phase === 'mapping', mappingNote: st.note, cols: e.props.bodyColumns }, {
-      open: v => {
-        openBoard($)
-        void update($, view, () => v)
+    const v = await read($, verdict)
+    const fixes = ruleCandidates(v).length + Object.values(v.marks).filter(m => m === 'no').length
+    return Band($.ui.resolve(e), { ledger: L, mapping: st.phase === 'mapping', mappingNote: st.note, cols: e.props.bodyColumns, fixes }, {
+      open: x => {
+        openBoard($, true)
+        void update($, view, () => x)
+      },
+      accept: () => {
+        sendVerdict($, 'accept').catch((err: unknown) => $.ui.toast(`Доска: ${String((err as Error)?.message ?? err).slice(0, 80)}`))
       },
     })
   })

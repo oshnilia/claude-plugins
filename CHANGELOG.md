@@ -4,6 +4,12 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
 ## session-board
 
+### 0.3.3 — 2026-10-03
+
+- "Принять работу" on the band above the prompt now accepts the work in one press. With drafted fixes it reads
+  "Отправить приёмку · правок N" and opens the Acceptance screen. "посмотреть" opens the screen without accepting.
+- When the board cannot open after a press, a toast says why instead of nothing happening.
+
 ### 0.3.2 — 2026-10-03
 
 Security:

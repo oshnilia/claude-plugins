@@ -129,8 +129,9 @@ test('intake, start, hand-in and a returned verdict', async $ => {
   expect(await rv.find({ text: /станет правилом проекта/ })).toBeDefined()
   await rv.unmount()
 
+  // drafted fixes: the band leads to the Acceptance screen instead of accepting
   const band2 = await $.ui.mount({ plugin: 'session-board', surface: 'terminal', ...BAND })
-  expect(await band2.find({ text: /Принять работу/ })).toBeDefined()
+  expect(await band2.find({ text: /Отправить приёмку · правок 2/ })).toBeDefined()
   await band2.unmount()
 
   const rv2 = await $.ui.mount({ plugin: 'session-board', surface: 'desktop', ...PANE })
@@ -189,4 +190,22 @@ test('an English-only update keeps the Russian title on the board', async $ => {
   const g = JSON.parse((await $.tool.call({ tool: 'mcp__session-board__ledger_read', id: 'G1' })).text) as { node: { title: { en: string; ru: string } } }
   expect(g.node.title.en).toBe('Ship board v2')
   expect(g.node.title.ru).toBe('Выпустить доску')
+})
+
+test('the band accepts the work in one press when there are no fixes', async $ => {
+  await $.tool.call(BRIEF)
+  const ui = await $.ui.mount({ plugin: 'session-board', surface: 'desktop', ...PANE })
+  await ui.press({ key: 'task-start' })
+  await ui.unmount()
+  await $.tool.call({ tool: 'mcp__session-board__submit', summary_ru: 'Готово.', criteria: [{ id: 'K1', status: 'proven', result_ru: 'Да.' }, { id: 'K2', status: 'proven', result_ru: 'Да.' }] })
+  const band = await $.ui.mount({ plugin: 'session-board', surface: 'desktop', ...BAND })
+  expect(await band.find({ text: /Принять работу/ })).toBeDefined()
+  expect(await band.find({ key: 'band-review' })).toBeDefined()
+  try {
+    await band.press({ key: 'band-main' })
+  } catch {
+    // no model answers the verdict message in the test kit; the accept has already run
+  }
+  await band.unmount()
+  expect((await $.tool.call({ tool: 'mcp__session-board__ledger_read', section: 'task' })).text).toContain('фаза: accepted')
 })
