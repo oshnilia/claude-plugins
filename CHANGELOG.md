@@ -72,5 +72,6 @@ Security:
 - CI runs with a read-only token, pinned actions, a pinned Claude Code version, and a check for personal paths and
   email addresses.
 - The public history uses the GitHub noreply address.
+- `.claude/settings.local.json` is ignored, so personal Claude Code settings never reach a pull request.
 - New: SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, issue and pull request templates, CODEOWNERS,
   docs/security-audit.md, and a README for session-board.

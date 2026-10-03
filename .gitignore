@@ -7,3 +7,5 @@ node_modules/
 __pycache__/
 plugins/*/tsconfig.json
 plugins/*/.claude-plugin/types/
+# Personal Claude Code settings stay on your machine.
+.claude/settings.local.json
