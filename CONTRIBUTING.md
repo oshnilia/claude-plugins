@@ -57,6 +57,10 @@ The maintainer, and Claude working for the maintainer, also go through pull requ
 CI is green; outside pull requests also need the maintainer's approval. Nobody pushes to `main` directly, and
 release tags cannot be moved or deleted.
 
+Claude merges only its own pull requests, only after CI is green, and only with a permission rule the maintainer sets
+on their machine (`Bash(gh pr merge:*)` in `.claude/settings.local.json`). A squash merge uses the GitHub noreply
+address as the author, so no personal email reaches the history.
+
 ## Conduct
 
 Be kind and specific. See [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
