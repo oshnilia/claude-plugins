@@ -4,3 +4,5 @@ node_modules/
 .claude/session-board/
 *.pdf
 __pycache__/
+plugins/*/tsconfig.json
+plugins/*/.claude-plugin/types/

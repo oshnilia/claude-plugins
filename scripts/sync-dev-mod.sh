@@ -5,6 +5,6 @@ set -euo pipefail
 src="${1:?path to the dev-mods mod folder}"
 name="${2:-$(basename "$src")}"
 dst="$(cd "$(dirname "$0")/.." && pwd)/plugins/$name"
-rsync -a --delete --exclude 'types/claude-code' "$src/" "$dst/"
+rsync -a --delete --exclude 'types/claude-code' --exclude 'tsconfig.json' --exclude '.claude-plugin/types' "$src/" "$dst/"
 claude plugin validate "$dst"
 claude plugin test "$dst"
