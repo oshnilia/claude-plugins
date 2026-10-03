@@ -58,7 +58,7 @@ The board opens on the screen of the current phase. A tab the person picks stays
 | Band above the prompt | Is Claude working, and do I have to act? | one state and one button: "Поставить задачу", "шаг 3 из 7", "нужен ты · N", "Принять работу" | whether to open the session at all | a jump to the right screen |
 | 1 Задание | Do we agree on the same thing? | the brief, criteria with their status, rules, authority, materials; with no task: the template, the project authority, unfinished tasks of the project | how Claude understood the task and what "done" means | Start, a fix of the brief, authority, a rule, a ban, a fact, a criterion |
 | 2 Ход | Where are we? | blocker cards, the main point (never the next step), goals with steps, what piles up for review | the state in 30 seconds | answers to blockers |
-| 3 Приёмка | Can I accept this? | criteria with evidence, decisions Claude took alone, assumptions, not done and risks, the report | what is proven and what is not | per item: right / wrong / comment; "make it a rule"; one verdict |
+| 3 Приёмка | Can I accept this? | the verdict in one plain line, "Нужно от тебя", each criterion with one plain sentence (the technical proof folds under a toggle), decisions Claude took alone, assumptions, not done and risks, the report | what is proven and what is not, in 30 seconds | per item: wrong / comment (silence means right); "make it a rule"; one verdict |
 | 4 Журнал | Can I trust this, and what changed? | Почему (chains, decisions), Ходы, Файлы with diffs, Память Claude (what Claude gets after compaction) | the reasoning, the changes, Claude's memory | "устарело" on any line, a fact, a ban, undo a decision |
 | 5 Спросить | Explain this to me | a side question over the whole session | an answer that does not touch the session | nothing |
 
@@ -77,7 +77,10 @@ The cartographer then marks each one answered, or opens it again.
 
 ## Hand-in and the report
 
-`submit` carries a summary, a result per criterion with evidence, verification steps, what is not done and what is next.
+`submit` carries a summary, per criterion a status, one plain Russian sentence (`result_ru`) and the technical evidence,
+what only the person can do now (`for_you`), verification steps, what is not done and what is next.
+Every Russian field is written for a person who did not watch the session: the result first, short sentences,
+no ledger ids, paths, run ids or tool names. Ids and commands go to the evidence, which the screen folds away.
 The board writes `report.html` into the task folder: one self-contained page (no network) with
 
 1. the verdict first: "proven 4 of 5 criteria", the summary, counts;

@@ -1,7 +1,7 @@
 import type { ElementTable } from 'claude-code'
 
 import type { Authority, BoardStatus, DiffView, Kind, Ledger, LedgerNode, LiveEvent, OpenTask, Phase, QA, Verdict } from '../types'
-import { AUTHORITIES, AUTHORITY, criteriaOf, phaseView, ruleCandidates, type VerdictKind } from './task'
+import { AUTHORITIES, AUTHORITY, criteriaOf, phaseView, proofOf, ruleCandidates, verdictLine, type VerdictKind } from './task'
 
 // Layout rules: docs/mod-design.md. Width comes from e.props.bodyColumns. Rows are a fixed gutter
 // (flexShrink 0) plus a growing, wrapping body (flexGrow 1, minWidth 0). Every gap is an explicit margin.
@@ -207,7 +207,6 @@ function critMark(els: Els, status: string) {
   return <Text dimColor>○</Text>
 }
 
-const evidenceText = (n: LedgerNode) => n.evidence.filter(e => e.ref !== 'task brief').map(e => e.ref).slice(0, 3).join(' · ')
 
 // ---------- header ----------
 
@@ -516,28 +515,35 @@ export function WorkView(els: Els, d: Data, a: Actions) {
 
 // ---------- 3. review: the verdict in one pass ----------
 
-function MarkButtons(els: Els, d: Data, a: Actions, id: string, ok: string, no: string) {
+// Silence means "right": the person marks only what is wrong, so each item carries one mark button.
+function MarkButtons(els: Els, d: Data, a: Actions, id: string, no: string) {
   const { Button } = els
   const m = d.verdict.marks[id]
   const c = d.verdict.comments[id]
   return [
-    <Button key={`v-ok-${id}`} label={m === 'ok' ? `✓ ${ok}` : ok} variant={m === 'ok' ? 'primary' : 'secondary'} onPress={() => a.mark(id, 'ok')} />,
-    <Button key={`v-no-${id}`} label={m === 'no' ? `✗ ${no}` : no} variant={m === 'no' ? 'primary' : 'secondary'} onPress={() => a.mark(id, 'no')} />,
+    <Button key={`v-no-${id}`} {...(m === 'no' ? { variant: 'primary' as const } : { plain: true as const })} label={m === 'no' ? `✗ ${no}` : no} onPress={() => a.mark(id, 'no')} />,
     <Button key={`v-c-${id}`} plain label={c ? 'изменить комментарий' : 'комментарий'} onPress={() => a.edit(`c:${id}`)} />,
   ]
 }
 
-function ReviewItem(els: Els, d: Data, a: Actions, n: LedgerNode, mark: unknown, detail: string, ok: string, no: string, first: boolean) {
-  const { Box, Text } = els
+/** One item: the title, one plain sentence, and the technical proof folded under a toggle. */
+function ReviewItem(els: Els, d: Data, a: Actions, n: LedgerNode, mark: unknown, plain: string, proof: string[], no: string, first: boolean) {
+  const { Box, Text, Button } = els
   const c = d.verdict.comments[n.id]
+  const evKey = `ev:${n.id}`
+  const open = d.expanded.includes(evKey)
   return (
     <Box key={`rv-${n.id}`} flexDirection="column" marginTop={first ? SPACE.item : SPACE.section}>
-      {Row(els, `rvr-${n.id}`, 3, mark, <Text wrap="wrap">{n.title.ru}</Text>)}
-      {detail ? Row(els, `rvd-${n.id}`, 3, <Text> </Text>, <Text dimColor wrap="wrap">{detail}</Text>) : null}
+      {Row(els, `rvr-${n.id}`, 3, mark, <Text bold wrap="wrap">{n.title.ru}</Text>)}
+      {plain && plain !== n.title.ru ? Row(els, `rvp-${n.id}`, 3, <Text> </Text>, <Text wrap="wrap">{plain}</Text>) : null}
+      {open ? proof.map((p, i) => Row(els, `rvd-${n.id}-${i}`, 3, <Text> </Text>, <Text dimColor wrap="wrap">{p}</Text>)) : null}
       {c ? Row(els, `rvc-${n.id}`, 3, <Text> </Text>, <Text color={BLUE} wrap="wrap">твой комментарий: {c}</Text>) : null}
       {d.editing === `c:${n.id}`
         ? Field(els, `cf-${n.id}`, 'Комментарий', 'что не так или что поправить', 'сохранить', v => a.comment(n.id, v), () => a.edit(''))
-        : ActionBar(els, `rva-${n.id}`, MarkButtons(els, d, a, n.id, ok, no), 3)}
+        : ActionBar(els, `rva-${n.id}`, [
+          proof.length ? <Button key={`ev-${n.id}`} plain label={open ? 'скрыть доказательства' : `доказательства · ${proof.length}`} onPress={() => a.toggle(evKey)} /> : null,
+          ...MarkButtons(els, d, a, n.id, no),
+        ], 3)}
     </Box>
   )
 }
@@ -563,8 +569,8 @@ export function ReviewView(els: Els, d: Data, a: Actions) {
   const sub = t.submitted
   const head = (
     <Box flexDirection="column">
-      {Rule(els, 'r-rev', t.phase === 'accepted' ? `Принято · раунд ${t.round}` : `Сдано · раунд ${t.round}`)}
-      <Box marginTop={SPACE.item}><Text bold wrap="wrap">{crit.length ? `Доказано ${proven} из ${crit.length} критериев` : 'В задании нет критериев'}</Text></Box>
+      {Rule(els, 'r-rev', t.phase === 'accepted' ? `Принято · раунд ${t.round}` : `Сдано на приёмку · раунд ${t.round}`)}
+      <Box marginTop={SPACE.item}><Text bold wrap="wrap">{verdictLine(crit)}</Text></Box>
       {crit.length ? Bar(els, 'rv-bar', proven, crit.length, d.width - 2, d.svg) : null}
       {sub ? Para(els, 'rv-sum', sub.summary.ru) : null}
       {ActionBar(els, 'rv-rep', [<Button key="report-open" label="Открыть отчёт" onPress={() => a.openReport()} />])}
@@ -582,22 +588,38 @@ export function ReviewView(els: Els, d: Data, a: Actions) {
   const assumptions = L.nodes.filter(n => n.kind === 'assumption' && !isClosed(n))
   const risks = L.nodes.filter(n => n.kind === 'risk' && !['lifted', 'done'].includes(n.status) && !gone(n))
   const remarks = ruleCandidates(d.verdict)
+  const forYou = sub?.forYou ?? []
+  const verifyOpen = d.expanded.includes('rv-verify')
   return (
     <Box flexDirection="column">
       {head}
-      {Rule(els, 'r-rv-crit', 'Готово, когда', crit.length)}
-      {crit.map((k, i) => ReviewItem(els, d, a, k, critMark(els, k.status), evidenceText(k), 'верно', 'не так', i === 0))}
+      {forYou.length ? Rule(els, 'r-rv-you', 'Нужно от тебя', forYou.length) : null}
+      {forYou.length ? (
+        <Box flexDirection="column" marginTop={SPACE.item}>
+          {forYou.map((s, i) => Row(els, `you-${i}`, 3, <Text color={BLUE} bold>{i + 1}</Text>, <Text wrap="wrap">{s}</Text>))}
+        </Box>
+      ) : null}
+      {Rule(els, 'r-rv-crit', 'Что проверено', crit.length)}
+      {crit.map((k, i) => ReviewItem(els, d, a, k, critMark(els, k.status), sub?.results?.[k.id] ?? '', proofOf(k), 'не так', i === 0))}
       {mine.length ? Rule(els, 'r-rv-dec', 'Claude решил сам', mine.length) : null}
-      {mine.map((n, i) => ReviewItem(els, d, a, n, <Text color={COLOR.decision} bold>◆</Text>,
-        [n.rejected?.length ? `отверг: ${n.rejected.map(r => r.ru).join('; ')}` : '', n.accepting ? `цена: ${n.accepting.ru}` : ''].filter(Boolean).join(' · '),
-        'согласен', 'отменить', i === 0))}
+      {mine.map((n, i) => ReviewItem(els, d, a, n, <Text color={COLOR.decision} bold>◆</Text>, n.statement?.ru ?? '',
+        [n.rejected?.length ? `отверг: ${n.rejected.map(r => r.ru).join('; ')}` : '', n.accepting ? `цена: ${n.accepting.ru}` : ''].filter(Boolean),
+        'отменить', i === 0))}
       {assumptions.length ? Rule(els, 'r-rv-as', 'Допущения', assumptions.length) : null}
-      {assumptions.map((n, i) => ReviewItem(els, d, a, n, <Text dimColor>≈</Text>, n.statement?.ru ?? '', 'верно', 'неверно', i === 0))}
+      {assumptions.map((n, i) => ReviewItem(els, d, a, n, <Text dimColor>≈</Text>, n.statement?.ru ?? '', [], 'неверно', i === 0))}
       {sub?.notDone.length || risks.length ? Rule(els, 'r-rv-nd', 'Не сделано и риски') : null}
       <Box flexDirection="column" marginTop={SPACE.item}>
         {(sub?.notDone ?? []).map((s, i) => Row(els, `nd-${i}`, 3, <Text color={ORANGE}>–</Text>, <Text wrap="wrap">{s}</Text>))}
         {risks.map(r => Row(els, `rk-${r.id}`, 3, <Text color={RED}>!</Text>, <Text wrap="wrap">{r.title.ru}</Text>))}
       </Box>
+      {sub?.verify.length ? (
+        <Box flexDirection="column">
+          {ActionBar(els, 'rv-ver-a', [
+            <Button key="rv-verify" plain label={verifyOpen ? 'скрыть, как проверить самому' : `как проверить самому · ${sub.verify.length}`} onPress={() => a.toggle('rv-verify')} />,
+          ], 0, SPACE.section)}
+          {verifyOpen ? sub.verify.map((s, i) => Row(els, `ver-${i}`, 3, <Text dimColor>{i + 1}</Text>, <Text wrap="wrap">{s}</Text>)) : null}
+        </Box>
+      ) : null}
       {Rule(els, 'r-rv-rem', 'Твои замечания', remarks.length)}
       {remarks.map((r, i) => (
         <Box key={`rem-${i}`} flexDirection="column" marginTop={SPACE.item}>

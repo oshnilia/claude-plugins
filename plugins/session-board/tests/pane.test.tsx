@@ -94,15 +94,26 @@ test('intake, start, hand-in and a returned verdict', async $ => {
   const handed = await $.tool.call({
     tool: 'mcp__session-board__submit',
     summary_ru: 'Доска работает, полоса показывает фазу.',
-    criteria: [{ id: 'K1', status: 'proven', evidence: ['claude plugin test: 8 pass'] }, { id: 'K2', status: 'failed' }],
+    criteria: [
+      { id: 'K1', status: 'proven', result_ru: 'Да: все тесты проходят.', evidence: ['claude plugin test: 8 pass'] },
+      { id: 'K2', status: 'failed', result_ru: 'Нет: без задачи полоса пустая.' },
+    ],
+    for_you: ['Открой доску и посмотри на полосу'],
     verify: ['claude plugin test .'],
     not_done: ['видео'],
   })
   expect(handed.text).toContain('Handed in for review')
 
   const rv = await $.ui.mount({ plugin: 'session-board', surface: 'desktop', ...PANE })
-  expect(await rv.find({ text: /Доказано 1 из 2 критериев/ })).toBeDefined()
+  // the verdict, what the person must do and one plain sentence per item; the technical proof waits under a toggle
+  expect(await rv.find({ text: /Готово 1 из 2 · не вышло: 1/ })).toBeDefined()
   expect(await rv.find({ text: /Доска работает/ })).toBeDefined()
+  expect(await rv.find({ text: /Открой доску и посмотри на полосу/ })).toBeDefined()
+  expect(await rv.find({ text: /Да: все тесты проходят\./ })).toBeDefined()
+  expect(await rv.find({ text: /8 pass/ })).toBeUndefined()
+  await rv.press({ key: 'ev-K1' })
+  expect(await rv.find({ text: /claude plugin test: 8 pass/ })).toBeDefined()
+  expect(await rv.find({ key: 'v-ok-K1' })).toBeUndefined()
   expect(await rv.find({ key: 'v-accept' })).toBeDefined()
   await rv.press({ key: 'v-no-K2' })
   await rv.press({ key: 'v-c-K2' })
@@ -164,4 +175,12 @@ test('a board message button waits until Claude answers it', async $ => {
   expect(await ui.find({ key: 'task-formal' })).toBeUndefined()
   expect(await ui.find({ text: /отправлено, Claude отвечает/ })).toBeDefined()
   await ui.unmount()
+})
+
+test('an English-only update keeps the Russian title on the board', async $ => {
+  await $.tool.call(note({ kind: 'goal', title: 'Ship the board', title_ru: 'Выпустить доску' }))
+  await $.tool.call(note({ id: 'G1', title: 'Ship board v2' }))
+  const g = JSON.parse((await $.tool.call({ tool: 'mcp__session-board__ledger_read', id: 'G1' })).text) as { node: { title: { en: string; ru: string } } }
+  expect(g.node.title.en).toBe('Ship board v2')
+  expect(g.node.title.ru).toBe('Выпустить доску')
 })

@@ -120,6 +120,19 @@ export function briefOps(L: Ledger, input: TaskInput): Op[] {
 
 export const criteriaOf = (L: Ledger) => L.nodes.filter(n => n.kind === 'criterion' && live(n))
 
+/** The first line of the Acceptance screen and the report: can the person accept, in plain words. */
+export function verdictLine(crit: LedgerNode[]): string {
+  if (!crit.length) return 'В задании не было пунктов для проверки'
+  const failed = crit.filter(k => k.status === 'failed').length
+  const open = crit.filter(k => k.status !== 'proven' && k.status !== 'failed').length
+  if (!failed && !open) return 'Всё готово, можно принимать'
+  const proven = crit.length - failed - open
+  return `Готово ${proven} из ${crit.length}${failed ? ` · не вышло: ${failed}` : ''}${open ? ` · не проверено: ${open}` : ''}`
+}
+
+/** The technical proof of a node, one line per item, without the brief's own marker. */
+export const proofOf = (n: LedgerNode) => n.evidence.filter(e => e.ref !== 'task brief').map(e => e.ref)
+
 export function renderTaskMd(L: Ledger): string {
   const t = L.task
   if (!t) return ''

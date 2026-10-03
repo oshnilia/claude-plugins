@@ -516,7 +516,11 @@ const TASK_TOOL_DESCRIPTION =
 
 const SUBMIT_TOOL_DESCRIPTION =
   'Hand in the work for acceptance. Call it only when the work is done: first check EVERY criterion of the brief (K1, K2...) yourself and collect evidence (test, command and its output, file:line, URL). ' +
-  'Give summary and summary_ru (what you got, 2 to 4 sentences, the result first), criteria [{id, status: proven|failed, evidence[]}], verify (steps the person can run to check, in Russian), not_done and next (in Russian). ' +
+  'Give summary and summary_ru (what the person gets now, 2 or 3 short sentences, the result first), criteria [{id, status: proven|failed, result_ru, evidence[]}], for_you (what only the person can do now), verify (how to check it yourself), not_done and next. ' +
+  'The person runs many sessions and reads this screen in 30 seconds, without having watched the session. So every Russian field (summary_ru, result_ru, for_you, verify, not_done, next) is plain everyday Russian: ' +
+  'the result first, one thought per sentence, up to 15 words, verbs instead of nouns, no ledger ids (K1, D20, F27), no file paths, no run ids, no tool names, no English terms where a Russian word exists. ' +
+  'Good result_ru: "Да: проверки на GitHub проходят, оба плагина устанавливаются." Bad: "CI run 37117211238: success on bb241e7". ' +
+  'Put ids, commands, paths, run ids and numbers into evidence: the board hides evidence under a toggle. ' +
   'The board builds an HTML report and shows the person the Acceptance screen. After the call, end your turn and wait for one verdict.'
 
 export const register: Register = (on, options) => {
@@ -658,10 +662,16 @@ export const register: Register = (on, options) => {
           criteria: {
             type: 'array',
             items: {
-              type: 'object', required: ['id', 'status'],
-              properties: { id: { type: 'string' }, status: { type: 'string', enum: ['proven', 'failed'] }, evidence: { type: 'array', items: { type: 'string' } } },
+              type: 'object', required: ['id', 'status', 'result_ru'],
+              properties: {
+                id: { type: 'string' },
+                status: { type: 'string', enum: ['proven', 'failed'] },
+                result_ru: { type: 'string', description: 'One plain Russian sentence for the person: what is true now. No ids, paths or commands.' },
+                evidence: { type: 'array', items: { type: 'string' }, description: 'Technical proof: command and output, file:line, URL, run id. Hidden under a toggle.' },
+              },
             },
           },
+          for_you: { type: 'array', items: { type: 'string' }, description: 'What only the person can do now, plain Russian, one action per item' },
           verify: { type: 'array', items: { type: 'string' } },
           not_done: { type: 'array', items: { type: 'string' } },
           next: { type: 'array', items: { type: 'string' } },
@@ -845,8 +855,9 @@ export const register: Register = (on, options) => {
       if (!n) return reply(`No node ${id}.`)
       const op = parseOp({
         op: 'update', id, status: s('status'), parent: s('parent'),
-        ...(s('title') ? { title: { en: s('title'), ru: s('title_ru') ?? s('title') } } : {}),
-        ...(s('statement') ? { statement: { en: s('statement'), ru: s('statement_ru') ?? s('statement') } } : {}),
+        // an English-only update keeps the Russian text: the board must not turn English
+        ...(s('title') ? { title: { en: s('title'), ru: s('title_ru') ?? n.title.ru } } : {}),
+        ...(s('statement') ? { statement: { en: s('statement'), ru: s('statement_ru') ?? n.statement?.ru ?? s('statement') } } : {}),
         ...(evidence ? { evidence: [...n.evidence, ...evidence].slice(0, 8) } : {}),
       })
       if (!op) return reply(`Not updated: ${id}.`)
@@ -925,9 +936,11 @@ export const register: Register = (on, options) => {
     const crit = criteriaOf(L)
     const items = (Array.isArray(raw.criteria) ? raw.criteria : []).filter(isObj)
     const ops: Op[] = []
+    const results: Record<string, string> = {}
     for (const it of items) {
       const k = crit.find(c => c.id === it.id)
       if (!k) continue
+      if (typeof it.result_ru === 'string' && it.result_ru.trim()) results[k.id] = it.result_ru.trim().slice(0, 300)
       const ev = strs(it.evidence, 6).map(r => ({ ref: r.slice(0, 200), type: 'tool' as const }))
       ops.push({ op: 'update', id: k.id, ...(it.status === 'proven' || it.status === 'failed' ? { status: it.status } : {}), evidence: [...k.evidence, ...ev].slice(0, 8) })
     }
@@ -935,7 +948,7 @@ export const register: Register = (on, options) => {
     if (closing) for (const g of L.nodes.filter(n => n.kind === 'goal' && n.status !== 'done' && !gone(n))) ops.push({ op: 'update', id: g.id, status: 'done' })
     if (ops.length) await commit($, ops, current?.n ?? L.turns.at(-1)?.n ?? 1, 'claude')
     const at = await iso($)
-    const sub: Submission = { at, round: t.round, summary, verify: strs(raw.verify), notDone: strs(raw.not_done), next: strs(raw.next) }
+    const sub: Submission = { at, round: t.round, summary, results, forYou: strs(raw.for_you), verify: strs(raw.verify), notDone: strs(raw.not_done), next: strs(raw.next) }
     await setTask($, x => ({ ...x, submitted: sub, phase: closing ? 'accepted' : 'review', acceptOnSubmit: false }))
     await update($, verdict, () => emptyVerdict())
     const path = await buildReport($)

@@ -66,6 +66,10 @@ export type Submission = {
   at: string
   round: number
   summary: Txt
+  /** one plain Russian sentence per criterion id: what is true now; the evidence stays on the node */
+  results?: Record<string, string>
+  /** what only the person can do now, in plain Russian */
+  forYou?: string[]
   verify: string[]
   notDone: string[]
   next: string[]

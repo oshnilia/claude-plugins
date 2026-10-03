@@ -1,5 +1,5 @@
 import type { Kind, Ledger, LedgerNode } from '../types'
-import { AUTHORITY, criteriaOf } from './task'
+import { AUTHORITY, criteriaOf, proofOf, verdictLine } from './task'
 
 /** What the report shows beside the ledger: the diff since Start. */
 export type ReportDiff = { stat: string; files: { path: string; patch: string; isNew: boolean }[] }
@@ -131,6 +131,7 @@ nav a{color:var(--muted);text-decoration:none}nav a:hover{color:var(--ink)}
 .row{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}.chip{display:inline-block;font-size:12px;line-height:18px;padding:0 8px;border-radius:9px;color:var(--c);border:1px solid color-mix(in srgb,var(--c) 45%,transparent);background:color-mix(in srgb,var(--c) 12%,transparent);margin-right:6px;white-space:nowrap}
 .nid{font-size:13px;color:var(--muted);font-weight:500}.mark{display:inline-block;width:22px;font-weight:700}.mark.ok{color:var(--ok)}.mark.bad{color:var(--bad)}.mark.todo{color:var(--todo)}
 .crit{display:grid;grid-template-columns:24px 1fr;gap:4px 8px}.evs{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}.ev{font-size:12.5px;background:color-mix(in srgb,var(--accent) 10%,transparent);padding:1px 7px;border-radius:6px;color:var(--ink);text-decoration:none;word-break:break-all}
+.said{margin:4px 0 0}.proof{margin-top:6px;font-size:14px}.proof summary{cursor:pointer;color:var(--muted)}.you ol{margin:6px 0 0;padding-left:22px}.you li{margin:4px 0}
 .kv{display:grid;grid-template-columns:90px 1fr;gap:8px;font-size:15px;margin-top:6px}.kv span{color:var(--muted);font-size:13px}.stmt{color:var(--muted);font-size:14.5px;margin-top:4px}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media (max-width:700px){.two{grid-template-columns:1fr}}
 ul.plain{margin:6px 0;padding-left:20px}ul.plain li{margin:4px 0}
@@ -152,20 +153,25 @@ footer{margin-top:56px;color:var(--muted);font-size:13px}code{font:13px ui-monos
   <h1>${esc(title)}</h1>
   <div class="sub">${esc(phase)}${t ? ` · раунд ${t.round}` : ''}${sub ? ` · сдано ${esc(sub.at.slice(0, 16).replace('T', ' '))}` : ''} · отчёт собран ${esc(generated.slice(0, 16).replace('T', ' '))}${t ? ` · полномочия: ${esc(AUTHORITY[t.authority].label)}` : ''}</div>
 </header>
-<nav><a href="#verdict">Итог</a><a href="#criteria">Критерии</a><a href="#changes">Изменения</a><a href="#decisions">Решения</a><a href="#map">Карта</a><a href="#turns">Ходы</a><a href="#verify">Проверить</a></nav>
+<nav><a href="#verdict">Итог</a><a href="#criteria">Что проверено</a><a href="#changes">Изменения</a><a href="#decisions">Решения</a><a href="#map">Карта</a><a href="#turns">Ходы</a><a href="#verify">Проверить</a></nav>
 
 <section id="verdict">
   <div class="card verdict">
-    <div class="big">${crit.length ? `Доказано ${proven} из ${crit.length} критериев` : 'Критериев нет'}</div>
+    <div class="big">${esc(verdictLine(crit))}</div>
     ${crit.length ? `<div class="bar"><i style="width:${Math.round((proven / crit.length) * 100)}%"></i></div>` : ''}
     ${sub ? `<p>${esc(sub.summary.ru)}</p>` : L.brief ? `<p>${esc(L.brief.answer.ru)}</p>` : ''}
     <div class="stats"><span>решений Claude <b>${mine.length}</b></span><span>допущений <b>${assumptions.length}</b></span><span>тупиков <b>${dead.length}</b></span><span>файлов <b>${files.size}</b></span><span>ходов <b>${L.turns.length}</b></span></div>
   </div>
+  ${sub?.forYou?.length ? `<div class="card you"><b>Нужно от тебя</b><ol>${sub.forYou.map(s => `<li>${esc(s)}</li>`).join('')}</ol></div>` : ''}
   ${t ? `<div class="two"><div class="card"><div class="muted">Цель</div>${esc(t.goal.ru)}</div><div class="card"><div class="muted">Результат</div>${esc(t.result.ru || '—')}</div></div>` : ''}
 </section>
 
-<section id="criteria"><h2>Готово, когда</h2>
-  ${crit.length ? crit.map(k => `<div class="card crit">${critMark(k.status)}<div><b class="nid">${esc(k.id)}</b> ${esc(k.title.ru)}${evidence(k)}</div></div>`).join('') : '<p class="muted">В задании нет критериев.</p>'}
+<section id="criteria"><h2>Что проверено</h2>
+  ${crit.length ? crit.map(k => {
+    const proof = proofOf(k)
+    const said = sub?.results?.[k.id]
+    return `<div class="card crit">${critMark(k.status)}<div><b>${esc(k.title.ru)}</b>${said ? `<p class="said">${esc(said)}</p>` : ''}${proof.length ? `<details class="proof"><summary>доказательства · ${proof.length}</summary><div class="evs">${proof.map(ref).join('')}</div></details>` : ''}</div></div>`
+  }).join('') : '<p class="muted">В задании не было пунктов для проверки.</p>'}
   <div class="two">
     <div class="card"><b>Не сделано</b>${list((sub?.notDone ?? []).map(esc), 'Всё из задания сделано.')}</div>
     <div class="card"><b>Риски</b>${list(risks.map(r => `${esc(r.title.ru)}${r.statement ? ` <span class="muted">— ${esc(r.statement.ru)}</span>` : ''}`), 'Открытых рисков нет.')}</div>

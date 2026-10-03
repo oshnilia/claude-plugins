@@ -86,7 +86,7 @@ test('the report shows criteria, escapes text and embeds no external scripts', a
   const html = renderReport(L, { stat: '', files: [] }, '2026-10-03T10:00:00.000Z')
   expect(html).toContain('Тесты проходят')
   expect(html).toContain('Выпустить &lt;доску&gt;')
-  expect(html).toContain('Доказано 1 из 1 критериев')
+  expect(html).toContain('Всё готово, можно принимать')
   expect(html.includes('<script src')).toBe(false)
 })
 
