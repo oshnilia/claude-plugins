@@ -1,0 +1,33 @@
+name: Bug
+description: Something does not work as the README says
+labels: [bug]
+body:
+  - type: dropdown
+    id: plugin
+    attributes:
+      label: Plugin
+      options: [session-board, legible, marketplace]
+    validations: { required: true }
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: "Plugin version (claude plugin list) and Claude Code version (claude --version); CLI or desktop"
+      placeholder: "session-board 0.3.2, Claude Code 2.1.288, desktop"
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      description: Steps to repeat it. Remove secrets, personal paths and private code first.
+    validations: { required: true }
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected and what happened
+    validations: { required: true }
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshot or log
+      description: For the board, the file render-error.txt in the task folder helps. Check it for private data.

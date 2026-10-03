@@ -23,6 +23,19 @@ compliance. Get the standard free from https://www.asd-ste100.org/STE_downloads.
 Evals: `claude plugin eval plugins/legible --no-publish` (makes real model calls; without `--no-publish` the report
 goes to claude.ai).
 
+## Install
+
+```bash
+claude plugin marketplace add oshnilia/claude-plugins
+claude plugin install legible@oshn
+```
+
+## Data and safety
+
+legible is text: skills, commands and an output style. No skill pre-approves a tool. The two scorers use only the
+Python standard library, read the text you give them and make no network requests. Evals call the model on your
+account and publish the report to claude.ai unless you pass `--no-publish`.
+
 ## Measured (v0.1.1, 2026-10-03, Claude Code 2.1.286, 3 runs per arm, judge: haiku)
 
 | Case | With legible | Without | Δ |

@@ -1,48 +1,122 @@
 # oshn — Claude Code plugins for understanding what Claude does
 
 Models now do more of the work. Our time moves to **understanding and checking** that work.
-These plugins change the interface, not the model: answers in a format that fits the task,
-and a live board that shows what happens in a session.
+These plugins change the interface, not the model: answers in a format that fits the question, and a board that turns
+a session into a task with a brief at the start and an acceptance at the end.
 
 | Plugin | What it does | Where it works |
 |---|---|---|
-| [`legible`](plugins/legible) | Plain English and plain Russian at a measurable strictness (plain-80), diagram-first answers, visual explainers, teach-back checks | Claude Code (CLI, desktop), skills also on claude.ai |
-| [`session-board`](plugins/session-board) | A mod for people who run many sessions at once: give all input at the start (a task brief with criteria and authority), let Claude work alone, give all feedback at the end (an acceptance screen and an HTML report). The task folder keeps the ledger, so compaction loses nothing | Claude Code desktop Code tab and CLI (2.1.287+) |
+| [`session-board`](plugins/session-board) | A mod for people who run many sessions at once. Two touches per task: a brief with criteria and authority at the start, an Acceptance screen and an interactive HTML report at the end; Claude works alone in between. The task folder keeps the ledger, so compaction loses nothing. Board texts are in Russian. | Claude Code desktop (Code tab) and terminal |
+| [`legible`](plugins/legible) | Plain English and plain Russian at a measurable strictness, diagram-first answers, visual explainers, teach-back checks | Claude Code; the skills also work on claude.ai |
 
 ## Install
 
+In a terminal:
+
 ```bash
 claude plugin marketplace add oshnilia/claude-plugins
-claude plugin install legible@oshn
 claude plugin install session-board@oshn
+claude plugin install legible@oshn
 ```
 
-In the desktop app: `+` → Plugins → Add plugin, then add the marketplace `oshnilia/claude-plugins`.
+Or inside a Claude Code session: `/plugin marketplace add oshnilia/claude-plugins`, then `/plugin install …`.
+The plugins live in your user configuration, so the terminal and the desktop Code tab both load them in the next
+session.
+
+**Update** (read the [CHANGELOG](CHANGELOG.md) first, then restart the session):
+
+```bash
+claude plugin marketplace update oshn
+claude plugin update session-board@oshn
+```
+
+**Settings** of session-board: `claude plugin configure session-board@oshn`.
+
+| Option | Default | Meaning |
+|---|---|---|
+| `update` | `every-turn` | After each turn with work, one model call (a fork of the session, read from cache) updates the map. `manual`: only on `/board-update`. |
+| `minTools` | `2` | Turns with fewer tool calls skip the model call. |
+| `autoOpen` | `true` | Open the board when a session starts. |
+| `injectAfterCompact` | `true` | After compaction, give Claude the task brief with ledger ids. |
+
+**Remove:** `claude plugin uninstall session-board@oshn`. The task folders in your projects stay; delete
+`.claude/tasks/` yourself if you do not need them.
+
+## Data and safety
+
+- **No network.** Neither plugin sends data anywhere. session-board's model calls go through your own Claude Code
+  session and use your tokens.
+- **Local files only.** session-board writes only to `<project>/.claude/tasks/` and `<project>/.claude/session-board/`.
+  Task folders stay out of git by default. A report contains your prompts, Claude's summaries and diffs: read it
+  before you share it.
+- **A mod runs code.** session-board runs inside your session with your user rights. It runs only read-only `git`
+  commands, `open` and `mv` inside its task folder. Install it only from this repository.
+- **Repository content is not trusted.** The board ignores a policy, rules or task folders that come with a cloned
+  project, and it marks rules it inferred from tool output as unconfirmed.
+
+Details: [SECURITY.md](SECURITY.md) and the [security audit](docs/security-audit.md).
+Report a vulnerability **privately** through the [Security tab](https://github.com/oshnilia/claude-plugins/security/advisories/new).
+
+## Contribute
+
+Bugs and ideas: [issues](https://github.com/oshnilia/claude-plugins/issues/new/choose). Changes: a pull request from
+a fork, after reading [CONTRIBUTING.md](CONTRIBUTING.md). Every change goes through review and CI; release tags
+`<plugin>--v<version>` mark each version.
 
 ## Why
 
 After Andrej Karpathy's post on the "format ladder" (plain controlled English → diagrams → interactive pages → video):
-https://x.com/karpathy/status/2105819303471976479. All references we used: [docs/references.md](docs/references.md).
+https://x.com/karpathy/status/2105819303471976479. References: [docs/references.md](docs/references.md).
+How the board works: [docs/board-logic.md](docs/board-logic.md).
 
 ## Repository
 
-- `plugins/<name>` — one folder per plugin; `version` lives in each `plugin.json`.
-- `docs/` — references, spike results, the session ledger spec, the board logic (`docs/board-logic.md`).
-- `scripts/sync-dev-mod.sh` — copy a mod from the hot-reload folder into the repo, then validate and test it.
-- CI validates the marketplace and each plugin and runs the mod tests.
+- `plugins/<name>` — one folder per plugin; `version` lives in each `.claude-plugin/plugin.json`.
+- `docs/` — references, the board logic, the ledger spec, the security audit.
+- `scripts/sync-dev-mod.sh` — copy a mod from a hot-reload folder into the repo, then validate and test it.
+
+ASD-STE100 is a trademark of ASD. legible is inspired by it, does not ship its dictionary and does not claim
+compliance. License: [MIT](LICENSE).
 
 ---
 
 ## По-русски
 
-Модели делают всё больше работы сами, а наше время уходит на то, чтобы **понимать и проверять** эту работу.
-Здесь два плагина:
+Модели делают всё больше работы, а наше время уходит на то, чтобы **понимать и проверять** её. Здесь два плагина.
 
-- **legible** — ответы в формате под задачу: упрощённый технический английский и русский с измеримой строгостью
-  (plain-80), сначала схема, наглядные объяснения, проверка понимания;
-- **session-board** — мод для Claude desktop, если ты ведёшь много сессий сразу. Два касания на задачу:
-  в начале — задание со всеми вводными (цель, результат, критерии «готово, когда», полномочия), в конце — приёмка
-  одним заходом и отчёт HTML по всей сессии. Между ними Claude работает сам и зовёт тебя только при блокере.
-  Журнал лежит в папке задачи, поэтому сжатие контекста ничего не теряет.
+- **session-board** — мод для тех, кто ведёт много сессий сразу. Два касания на задачу: в начале задание со всеми
+  вводными (цель, результат, пункты «готово, когда», полномочия), в конце приёмка одним вердиктом и интерактивный
+  отчёт — схема метро всей сессии. Между ними Claude работает сам и зовёт тебя, только когда упёрся. Журнал лежит в
+  папке задачи, поэтому сжатие переписки ничего не теряет. Подробно — в [README доски](plugins/session-board/README.md).
+- **legible** — ответы в формате под вопрос: простой технический английский и русский с измеримой строгостью,
+  сначала схема, наглядные объяснения, проверка понимания. Подробно — в [README legible](plugins/legible/README.md).
 
-Установка — командами выше. Лицензия — MIT.
+### Установка
+
+В терминале:
+
+```bash
+claude plugin marketplace add oshnilia/claude-plugins
+claude plugin install session-board@oshn
+claude plugin install legible@oshn
+```
+
+Или внутри сессии Claude Code: `/plugin marketplace add oshnilia/claude-plugins`, затем `/plugin install …`.
+Плагины ставятся в пользовательский конфиг, поэтому их увидят и терминал, и вкладка Code в desktop — в следующей сессии.
+
+Обновление: `claude plugin marketplace update oshn`, затем `claude plugin update session-board@oshn` и перезапуск
+сессии. Перед обновлением загляни в [CHANGELOG](CHANGELOG.md). Настройки доски: `claude plugin configure session-board@oshn`
+(таблица выше). Удаление: `claude plugin uninstall session-board@oshn`; папки задач в проектах остаются.
+
+### Данные и безопасность
+
+- Плагины ничего не отправляют в сеть. Вызовы модели у доски идут через твою же сессию и тратят твои токены.
+- Доска пишет только в `<проект>/.claude/tasks/` и `<проект>/.claude/session-board/`; папки задач не попадают в git.
+  В отчёте твои запросы, сводки Claude и изменения — прочитай его, прежде чем кому-то отправить.
+- Мод выполняет код в твоей сессии с твоими правами: только `git` на чтение, `open` и `mv` внутри папки задачи.
+  Ставь его только из этого репозитория.
+- Доска не доверяет содержимому чужих репозиториев: политику, правила и папки задач из клонированного проекта она
+  не применяет, а правила, выведенные из вывода инструментов, помечает как неподтверждённые.
+
+Об уязвимости — только приватно через вкладку [Security](https://github.com/oshnilia/claude-plugins/security/advisories/new).
+Как предложить изменение — [CONTRIBUTING.md](CONTRIBUTING.md). Лицензия — MIT.
