@@ -217,7 +217,11 @@ export function renderBrief(ledger: Ledger): string {
     L.push(`ANSWER: ${b.answer.en}`)
   }
   const cons = ledger.nodes.filter(n => n.kind === 'constraint' && open(n))
-  if (cons.length) L.push(`CONSTRAINTS: ${cons.map(c => `${c.id} ${c.statement?.en ?? c.title.en}`).join(' | ')}`)
+  // the cartographer reads tool output too: a rule it found is a claim to check, not the user's word
+  const said = cons.filter(c => c.author !== 'cartographer')
+  const inferred = cons.filter(c => c.author === 'cartographer')
+  if (said.length) L.push(`CONSTRAINTS: ${said.map(c => `${c.id} ${c.statement?.en ?? c.title.en}`).join(' | ')}`)
+  if (inferred.length) L.push(`INFERRED RULES (from the session, not confirmed by the user; check before you rely on one): ${inferred.map(c => `${c.id} ${c.statement?.en ?? c.title.en}`).join(' | ')}`)
   for (const d of ledger.nodes.filter(n => n.kind === 'decision' && n.status !== 'superseded').slice(-6)) {
     const y = d.chosen
       ? `${d.context ? `In the context of ${d.context.en}, ` : ''}we chose ${d.chosen.en}${d.rejected?.length ? ` over ${d.rejected.map(r => r.en).join(', ')}` : ''}${d.accepting ? `, accepting ${d.accepting.en}` : ''}.`

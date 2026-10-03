@@ -59,6 +59,23 @@ const gone = (n: LedgerNode) => n.status === 'superseded' || n.status === 'dropp
 const reply = (text: string) => ({ result: text, text })
 const tasksRoot = () => (root ? `${root}/.claude/tasks` : '')
 
+/**
+ * True when git tracks the path: then it came with the repository, not from the person at this machine.
+ * Board policy, rules and task folders from a repository are never trusted: a cloned project could raise
+ * Claude's authority or plant "rules" that way. Without git nothing can be tracked.
+ */
+async function isTracked($: EngineInterface, path: string): Promise<boolean> {
+  if (!root) return false
+  try {
+    const r = await $.process.run(['git', '-C', root, 'ls-files', '--', path])
+    return r.exitCode === 0 && r.stdout.trim().length > 0
+  } catch {
+    return false
+  }
+}
+
+const insideTasks = (dir: string) => !!tasksRoot() && dir.startsWith(`${tasksRoot()}/`) && !dir.includes('/../')
+
 async function iso($: EngineInterface) {
   try {
     return new Date(await $.clock.now()).toISOString()
@@ -166,7 +183,7 @@ async function refreshOpenTasks($: EngineInterface) {
   const dirs = (await $.fs.list(base)).filter(x => x.kind === 'dir').map(x => x.name).sort().reverse().slice(0, 30)
   for (const name of dirs) {
     const dir = `${base}/${name}`
-    if (dir === cur || !(await $.fs.exists(`${dir}/ledger.json`))) continue
+    if (dir === cur || !(await $.fs.exists(`${dir}/ledger.json`)) || (await isTracked($, dir))) continue
     try {
       const saved = JSON.parse(await $.fs.read(`${dir}/ledger.json`)) as Ledger
       if (saved.task && saved.task.phase !== 'accepted') out.push({ dir, title: saved.task.title.ru, phase: saved.task.phase, updated: saved.updated })
@@ -290,6 +307,19 @@ async function reportRenderError($: EngineInterface, viewName: string, msg: stri
 
 async function openPath($: EngineInterface, path: string) {
   const r = await $.process.run(['open', path])
+  if (r.exitCode !== 0) $.ui.toast(`Не удалось открыть ${path}`)
+}
+
+// files that macOS would run or follow instead of showing: reveal them in Finder
+const RUNS = /\.(app|command|tool|terminal|sh|zsh|bash|scpt|applescript|workflow|action|pkg|mpkg|dmg|jar|webloc|inetloc|fileloc|url|desktop)$/i
+
+/** "Открыть" on a file from the ledger: only files of this project, and never by running them. */
+async function openFile($: EngineInterface, path: string) {
+  if (!root || !path.startsWith(`${root}/`) || path.includes('/../') || !(await $.fs.exists(path))) {
+    $.ui.toast('Доска открывает только файлы этого проекта')
+    return
+  }
+  const r = await $.process.run(RUNS.test(path) ? ['open', '-R', path] : ['open', path])
   if (r.exitCode !== 0) $.ui.toast(`Не удалось открыть ${path}`)
 }
 
@@ -490,6 +520,10 @@ async function sendVerdict($: EngineInterface, kind: VerdictKind) {
 }
 
 async function continueTask($: EngineInterface, dir: string) {
+  if (!insideTasks(dir) || (await isTracked($, dir))) {
+    $.ui.toast('Эта папка задачи пришла с репозиторием: доска её не загружает')
+    return
+  }
   if (!(await $.fs.exists(`${dir}/ledger.json`))) return
   try {
     const saved = JSON.parse(await $.fs.read(`${dir}/ledger.json`)) as Ledger
@@ -547,7 +581,9 @@ export const register: Register = (on, options) => {
       try {
         if (await $.fs.exists(`${legacy}/task.json`)) {
           const ptr = JSON.parse(await $.fs.read(`${legacy}/task.json`)) as { dir?: string }
-          if (ptr.dir && (await $.fs.exists(`${ptr.dir}/ledger.json`))) saved = JSON.parse(await $.fs.read(`${ptr.dir}/ledger.json`)) as Ledger
+          if (ptr.dir && insideTasks(ptr.dir) && !(await isTracked($, ptr.dir)) && (await $.fs.exists(`${ptr.dir}/ledger.json`))) {
+            saved = JSON.parse(await $.fs.read(`${ptr.dir}/ledger.json`)) as Ledger
+          }
         }
         if (!saved && (await $.fs.exists(`${legacy}/ledger.json`))) saved = JSON.parse(await $.fs.read(`${legacy}/ledger.json`)) as Ledger
       } catch {
@@ -563,14 +599,23 @@ export const register: Register = (on, options) => {
     await update($, ledger, prev => ({ ...prev, sid: sessionId }))
     try {
       const base = tasksRoot()
+      const foreign: string[] = []
       if (await $.fs.exists(`${base}/policy.json`)) {
-        const p = JSON.parse(await $.fs.read(`${base}/policy.json`)) as { authority?: unknown }
-        if (isAuthority(p.authority)) {
-          const level = p.authority
-          await update($, policy, () => level)
+        if (await isTracked($, `${base}/policy.json`)) foreign.push('policy.json')
+        else {
+          const p = JSON.parse(await $.fs.read(`${base}/policy.json`)) as { authority?: unknown }
+          if (isAuthority(p.authority)) {
+            const level = p.authority
+            await update($, policy, () => level)
+          }
         }
       }
-      projectRules = (await $.fs.exists(`${base}/RULES.md`)) ? await $.fs.read(`${base}/RULES.md`) : ''
+      projectRules = ''
+      if (await $.fs.exists(`${base}/RULES.md`)) {
+        if (await isTracked($, `${base}/RULES.md`)) foreign.push('RULES.md')
+        else projectRules = await $.fs.read(`${base}/RULES.md`)
+      }
+      if (foreign.length) $.ui.toast(`Доска не применяет ${foreign.join(' и ')} из репозитория: такие настройки задаёт только человек на этой машине`)
     } catch {
       projectRules = ''
     }
@@ -1034,7 +1079,7 @@ export const register: Register = (on, options) => {
           void sendOnce($, `undo:${id}`, `Отмени своё решение «${n.title.ru}» (${id}). Предложи, что сделать вместо него, и спроси меня перед изменениями.${alt}`)
         })
       },
-      openFile: path => later(() => openPath($, path)),
+      openFile: path => later(() => openFile($, path)),
       showDiff: path => later(() => toggleDiff($, path)),
       tellClaude: (text, key) => later(() => sendOnce($, key ?? text.slice(0, 60), text)),
       newTask: text => {

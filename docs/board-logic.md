@@ -134,3 +134,6 @@ The summary keeps only what the files lack: work in progress, details said in pa
 The compaction hook adds the fresh brief and the protocol with the folder path as the last message of the compacted conversation. (A `session.append` from a timer never reached the compacted conversation.)
 
 A new session in the same project lists the unfinished tasks on its Task screen; "Продолжить здесь" loads one.
+
+Trust: the board applies `policy.json` and `RULES.md`, and lists task folders, only when git does not track them.
+Files that come with a cloned repository are someone else's, so they never set Claude's authority or rules.
