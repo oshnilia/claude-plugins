@@ -14,7 +14,7 @@
     {
       "name": "session-board",
       "source": "./plugins/session-board",
-      "description": "Desktop mod: a live board next to the session with a pyramid summary, a map, a timeline and a session ledger that Claude reads back after compaction.",
+      "description": "Desktop mod for people who run many sessions: a task brief at the start, an acceptance screen and an HTML report at the end, and a task folder that survives compaction.",
       "category": "productivity",
       "tags": ["mod", "desktop", "observability", "ledger"]
     }

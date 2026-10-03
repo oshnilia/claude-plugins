@@ -51,7 +51,7 @@ Rules: ids never change; a colliding id of another kind gets a fresh id; nothing
 Recorded without a model on every main-thread turn; `ask/did` are rewritten by the cartographer.
 
 ## The brief Claude reads back
-Fixed order, about 400 tokens, appended after compaction:
+Fixed order, about 400 tokens, added as the last message of the compacted conversation:
 ```
 <session-ledger v1 sid=… updated=…>
 TASK: … [work] folder=/…/.claude/tasks/2026-10-03-<slug>

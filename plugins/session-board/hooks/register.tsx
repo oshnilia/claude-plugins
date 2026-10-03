@@ -796,16 +796,14 @@ export const register: Register = (on, options) => {
     const L0 = await read($, ledger)
     const rules = compactRules(renderBrief(L0), L0.task?.dir ?? '')
     const result = await next({ ...e, instructions: e.instructions ? `${e.instructions}\n\n${rules}` : rules })
-    if (cfg.injectAfterCompact && !('skip' in result)) {
-      const L = await read($, ledger)
-      if (L.nodes.length || L.brief || L.task) {
-        const text = `${renderBrief(L)}\n\n${protocol(L.task?.dir ?? '', projectRules)}`
-        $.clock.after(0, () => {
-          void $.session.append({ message: { type: 'user', content: [{ type: 'text', text }] } })
-        })
-      }
-    }
-    return result
+    if (!cfg.injectAfterCompact || 'skip' in result) return result
+    const L = await read($, ledger)
+    if (!L.nodes.length && !L.brief && !L.task) return result
+    // the brief rides in the compacted conversation itself: a session.append from a timer
+    // never reached the compacted conversation (K4, 2026-10-03)
+    if (result.messages.at(-1)?.text.startsWith('<session-ledger')) return result
+    const text = `${renderBrief(L)}\n\n${protocol(L.task?.dir ?? '', projectRules)}`
+    return { ...result, messages: [...result.messages, { role: 'user' as const, text, toolUses: [] }] }
   })
 
   // ---------- tools Claude can call ----------

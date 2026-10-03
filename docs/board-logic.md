@@ -122,6 +122,6 @@ the board gives these rules to Claude at the start of every session in the proje
 
 Compaction: the instructions give the summarizer the current brief with ids and tell it NOT to restate the ledger.
 The summary keeps only what the files lack: work in progress, details said in passing, the last exchange.
-After compaction the board appends the fresh brief and the protocol with the folder path.
+The compaction hook adds the fresh brief and the protocol with the folder path as the last message of the compacted conversation. (A `session.append` from a timer never reached the compacted conversation.)
 
 A new session in the same project lists the unfinished tasks on its Task screen; "Продолжить здесь" loads one.
