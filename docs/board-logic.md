@@ -55,7 +55,7 @@ The board opens on the screen of the current phase. A tab the person picks stays
 
 | Screen | Question it answers | Shows | The person learns | The person adds |
 |---|---|---|---|---|
-| Band above the prompt | Is Claude working, and do I have to act? | one state and one button: "Поставить задачу", "шаг 3 из 7", "нужен ты · N", "Принять работу" | whether to open the session at all | a jump to the right screen |
+| Band above the prompt | Is Claude working, and do I have to act? | one state and one button: "Поставить задачу", "шаг 3 из 7", "нужен ты · N", "Принять работу" | whether to open the session at all | a jump to the right screen; "Принять работу" accepts at once when no fixes are drafted |
 | 1 Задание | Do we agree on the same thing? | the brief, criteria with their status, rules, authority, materials; with no task: the template, the project authority, unfinished tasks of the project | how Claude understood the task and what "done" means | Start, a fix of the brief, authority, a rule, a ban, a fact, a criterion |
 | 2 Ход | Where are we? | blocker cards, the main point (never the next step), goals with steps, what piles up for review | the state in 30 seconds | answers to blockers |
 | 3 Приёмка | Can I accept this? | the verdict in one plain line, "Нужно от тебя", each criterion with one plain sentence (the technical proof folds under a toggle), decisions Claude took alone, assumptions, not done and risks, the report | what is proven and what is not, in 30 seconds | per item: wrong / comment (silence means right); "make it a rule"; one verdict |
