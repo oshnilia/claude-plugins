@@ -59,7 +59,8 @@ with-arm as "the skill fired" indicators. Set `arm: both` on a "must not fire" g
 4. Write cases where the baseline is likely to fail. A case where both arms score 1.00 is a guard against
    regressions, not a measure of value. Keep a few guards on purpose (short answers stay short, creative text is
    not flattened).
-5. Tag every case. We use `core` for cases that run without Bash and `needs-bash` for cases that need a shell.
+5. Tag every case. We use `core` for cases that need only read-only tools, `needs-write` for cases that create files
+   (HTML pages, step players) and `needs-bash` for cases that need a shell.
 
 ## How we run it
 
@@ -69,7 +70,9 @@ cd plugins/legible
 claude plugin eval . --tag core --runs 1 --ablation none --no-publish --threshold 0
 # 2. Measure: 3 runs per arm, with and without the plugin.
 claude plugin eval . --tag core --judge-model sonnet -j 6 --no-publish --threshold 0 --max-cost-usd 20
-# 3. Cases that need a shell (the scorer scripts).
+# 3. Cases that create files (HTML pages, step players).
+claude plugin eval . --tag needs-write --allow-tools Write Edit --judge-model sonnet --no-publish --threshold 0
+# 4. Cases that need a shell (the scorer scripts).
 claude plugin eval . --tag needs-bash --allow-tools "Bash(python3:*)" --no-publish --threshold 0
 ```
 
@@ -91,6 +94,9 @@ Without `--no-publish` the HTML report goes to claude.ai as a private page. Resu
 - **Only `flags: i`.** There is no multiline flag and no inline `(?i)`.
 - **Tell the judge which forms are correct.** A small judge marked «таблицы переиндексируют» (no subject) as an
   invented actor. List the allowed forms in the rubric, or use `--judge-model sonnet`.
+- **Grade a created file with `focus: {source: file, path: ...}`.** Name the file in the prompt ("Save it as dns.html"),
+  so both arms write to the same path. Add a `regex` grader on the file for mechanical rules (no network resources):
+  a judge reading a long HTML file is noisy.
 - **Bash cases need a clean sandbox.** On macOS the eval refuses Bash when `~/.docker` holds a symbolic link inside it.
 
 ---

@@ -4,6 +4,12 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
 ## session-board
 
+### 0.4.0 — 2026-10-03
+
+- Under an answer with 120 or more words of prose, the band shows "показать иначе: STE / Схема / HTML / Анимация",
+  the rungs of Karpathy's format ladder. A press sends the request into the session as your message. Any new message
+  takes the row down.
+
 ### 0.3.3 — 2026-10-03
 
 - "Принять работу" on the band above the prompt now accepts the work in one press. With drafted fixes it reads
@@ -58,6 +64,21 @@ Security:
 - First version: a live session board with a typed ledger that Claude reads back after compaction.
 
 ## legible
+
+### 0.2.0 — 2026-10-03
+
+- The format ladder from Karpathy's post: text in ASD-STE100, then a diagram, then an HTML page, then an animated
+  explainer. HTML pages and animations are built only when you ask, or from the session board's buttons.
+- plain-english asks the model for ASD-STE100 by name, 80% of the way by default. It keeps facts, hedges, identifiers
+  and actors, adds a `Kept as-is:` line for precision it kept on purpose, and marks deviations at level 100.
+- The English scorer also finds marketing words, actions hidden in nouns ("perform an analysis") and synonym rotation
+  ("check" here, "verify" there).
+- New skill `animated-explainer` and command `/animate`: one offline HTML step player with captions, back and
+  forward, a slider, Play and a link to each step.
+- Without a shell, the plain skills say nothing about the scorer. A diagram's takeaway is three sentences at most.
+  «Без воды» keeps a Russian answer under 120 words.
+- HTML pages carry a Content-Security-Policy that blocks network requests.
+- Evals: 21 cases, with and without the plugin; see `docs/evals.md`.
 
 ### 0.1.1 — 2026-10-03
 

@@ -20,6 +20,10 @@ words, each with one meaning. Use that knowledge. The level sets how far you go:
 At plain-80 the sentences follow STE, but the text still reads like normal prose: keep a precise technical word when
 the approved word would lose meaning. At plain-100 use only words you know to be approved, and only can, will or must.
 
+The STE sentence rules hold at plain-80 and plain-100: one verb, never a phrasal verb ("configure", not "set up";
+"do", not "go through"); active voice; simple tenses; no contractions; no semicolons; one instruction per sentence,
+the condition first; 20 words or fewer for an instruction, 25 for a description; no more than 3 nouns in a row.
+
 ## What must not change
 
 1. Keep every fact of the source and add none. The rewrite does not say more than the source.

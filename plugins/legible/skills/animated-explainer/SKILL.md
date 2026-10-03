@@ -21,7 +21,8 @@ installed: one HTML file that plays a diagram step by step, with a caption for e
 
 ## 2. Fill the template
 
-Copy [assets/player.html](assets/player.html) to `explainers/<slug>-steps.html` in the project. Change only these parts:
+Copy [assets/player.html](assets/player.html) to `explainers/<slug>-steps.html` in the project, or to the path the
+user names. Change only these parts:
 
 1. `<html lang>`, both `TITLE` places and `ANSWER IN ONE SENTENCE`.
 2. The `<svg>` content: draw the full diagram (15 nodes or fewer, labels of 4 words or fewer). Give each part the step

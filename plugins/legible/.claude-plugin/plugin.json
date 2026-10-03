@@ -1,11 +1,11 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "legible",
-  "version": "0.1.1",
-  "description": "Answer formats for understanding, after Karpathy's format ladder: plain English and plain Russian at a measurable strictness, diagram-first answers, visual explainers and teach-back checks.",
+  "version": "0.2.0",
+  "description": "Answer formats for understanding, after Karpathy's format ladder: ASD-STE100 text (80% of the way by default) and plain Russian, diagram-first answers, HTML explainers, offline animated step players and teach-back checks.",
   "author": { "name": "Ilia", "url": "https://github.com/oshnilia" },
   "homepage": "https://github.com/oshnilia/claude-plugins/tree/main/plugins/legible",
   "repository": "https://github.com/oshnilia/claude-plugins",
   "license": "MIT",
-  "keywords": ["plain-language", "simplified-technical-english", "diagrams", "explain", "teach-back", "russian"]
+  "keywords": ["ASD-STE100", "simplified-technical-english", "plain-language", "diagrams", "explainers", "animation", "teach-back", "russian"]
 }

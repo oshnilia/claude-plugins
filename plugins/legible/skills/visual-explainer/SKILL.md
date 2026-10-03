@@ -33,7 +33,7 @@ overview. Pass `title`, `markdown` (plain-80 / plain-ru-80, max 10,000 character
 tooltips. Scripts and event handlers do not run. Max 131,072 characters per SVG.
 
 **HTML — only when the user asks for HTML or a page, or presses HTML on the board**: write one self-contained file
-to `explainers/<slug>.html` in the project, then tell the user the path in one line.
+to `explainers/<slug>.html` in the project (or to the path the user names), then tell the user the path in one line.
 - Same pyramid: the answer at the top, the key parts as sections, details behind `<details>` or a click.
 - Page shape for a concept: question → intuition → mechanism → edge cases → what to remember.
 - One claim per figure. Give each figure a caption "Fig. N - <the claim>".
