@@ -4,6 +4,18 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
 ## session-board
 
+### 0.5.0 — 2026-10-04
+
+- The board works on the Claude mobile app over Remote Control. When a phone attaches, the board opens for it in one
+  narrow column: state, "Нужен ты" cards, the current step, the criteria and a route map. Start, Accept and option
+  answers are buttons; free text (an answer, a fix to the brief, a remark on return) goes through the question
+  dialog's "Other" field, because the phone draws no input fields.
+- `/board` also prints the board card in the transcript, on every surface.
+- Pushes when a brief waits for Start, when Claude needs an answer and when the work is handed in (setting `push`).
+- "Отчёт на телефоне" asks Claude to publish the HTML report as a private claude.ai page, only on that press.
+- A new brief with another title while the task waits for acceptance starts a new task. Before, it replaced the
+  handed-in criteria of the waiting task.
+
 ### 0.4.0 — 2026-10-03
 
 - Under an answer with 120 or more words of prose, the band shows "показать иначе: STE / Схема / HTML / Анимация",
