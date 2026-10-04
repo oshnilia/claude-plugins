@@ -4,6 +4,16 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
 ## session-board
 
+### 0.6.0 — 2026-10-04
+
+- On a phone, a tablet or a browser (Remote Control) the board works in text. Mods draw only in the terminal and the
+  Desktop app, so the narrow layout from 0.5.0 never showed there; it is removed.
+- `/board` from such a device prints the board as text and then asks the next step in a question dialog, which Remote
+  Control forwards: Start or fix the brief, accept or return the work, or answer Claude's question.
+- «Старт», «Принять», «Вернуть: …» and «Принять с правками: …» typed in the chat press the board's buttons in their
+  phase. Claude gets the message the button would send, not a second one.
+- Pushes say what to answer.
+
 ### 0.5.0 — 2026-10-04
 
 - The board works on the Claude mobile app over Remote Control. When a phone attaches, the board opens for it in one

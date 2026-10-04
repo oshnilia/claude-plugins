@@ -11,8 +11,8 @@ import {
   VERDICT_LABEL, verdictLine, verdictMessage, type VerdictKind,
 } from './task'
 import { LADDER_MIN_WORDS, proseWords, RUNGS } from './ladder'
-import { MobileBoard, type MobileActions } from './mobile'
-import { Band, Board, resolveView, type Actions, type AddKind, type Data } from './views'
+import { boardText, parseChatCommand } from './remote'
+import { Band, Board, resolveView, waitingQuestions, type Actions, type AddKind, type Data } from './views'
 
 const PANE = 'board'
 const EXPLAIN_PANE = 'board-explain'
@@ -436,9 +436,9 @@ async function openReport($: EngineInterface) {
 
 // ---------- what the person does on the board ----------
 
-async function startTask($: EngineInterface) {
+async function startTask($: EngineInterface, send = true): Promise<string> {
   const t0 = (await read($, ledger)).task
-  if (!t0) return
+  if (!t0) return ''
   let base: string | undefined
   if (root) {
     const r = await $.process.run(['git', '-C', root, 'rev-parse', 'HEAD'])
@@ -447,7 +447,10 @@ async function startTask($: EngineInterface) {
   const at = await iso($)
   const L = await setTask($, t => ({ ...t, phase: 'work', started: t.started ?? at, ...(base && !t.base ? { base } : {}) }))
   await update($, editing, () => '')
-  if (L.task) await sendOnce($, 'start', startMessage(L.task))
+  if (!L.task) return ''
+  const msg = startMessage(L.task)
+  if (send) await sendOnce($, 'start', msg)
+  return msg
 }
 
 async function setAuthority($: EngineInterface, level: Authority) {
@@ -502,10 +505,10 @@ async function sendNotes($: EngineInterface) {
   await sendOnce($, 'notes', `Заметки с доски:\n${queued.map(n => `- ${n}`).join('\n')}`)
 }
 
-async function sendVerdict($: EngineInterface, kind: VerdictKind) {
+async function sendVerdict($: EngineInterface, kind: VerdictKind, send = true): Promise<string> {
   const L = await read($, ledger)
   const t = L.task
-  if (!t) return
+  if (!t) return ''
   const v = await read($, verdict)
   const msg = verdictMessage(kind, L, v)
   const at = await iso($)
@@ -538,7 +541,8 @@ async function sendVerdict($: EngineInterface, kind: VerdictKind) {
   await update($, verdict, () => emptyVerdict())
   await update($, editing, () => '')
   if (kind === 'accept') await buildReport($)
-  await sendOnce($, 'verdict', msg)
+  if (send) await sendOnce($, 'verdict', msg)
+  return msg
 }
 
 async function continueTask($: EngineInterface, dir: string) {
@@ -669,9 +673,10 @@ function boardActions($: EngineInterface): Actions {
   }
 }
 
-// On the phone the person cannot type into the board: free text goes through the question dialog ("Other").
-function mobileActions($: EngineInterface, a: Actions): MobileActions {
-  const later = (fn: () => Promise<unknown>) => void fn().catch((err: unknown) => $.ui.toast(`Доска: ${(err as Error).message.slice(0, 80)}`))
+/** The next step as a question dialog, for a phone or a browser: Remote Control forwards these, mods draw there not. */
+async function askNext($: EngineInterface) {
+  const L = await read($, ledger)
+  const t = L.task
   const ask = async (q: string, options: string[]) => {
     try {
       return (await $.ui.ask(q, options)).trim()
@@ -680,64 +685,45 @@ function mobileActions($: EngineInterface, a: Actions): MobileActions {
     }
   }
   const IN_CHAT = 'Напишу в чате'
-  return {
-    start: () => a.start(),
-    accept: () => a.sendVerdict('accept'),
-    answer: (id, text) => {
-      void update($, sent, list => [...list, { key: `answer:${id}`, text, started: false }])
-      a.submitAnswer(id, text)
-    },
-    askAnswer: id => later(async () => {
-      const n = (await read($, ledger)).nodes.find(x => x.id === id)
-      if (!n) return
-      const t = await ask(`${n.title.ru.replace(/[?.]$/, '')}? Свой ответ впишите в «Other».`, [IN_CHAT, 'Позже'])
-      if (t && t !== IN_CHAT && t !== 'Позже') {
-        await update($, sent, list => [...list, { key: `answer:${id}`, text: t, started: false }])
-        a.submitAnswer(id, t)
-      }
-    }),
-    askFix: () => later(async () => {
-      const t = await ask('Что поправить в задании? Впишите в «Other».', [IN_CHAT, 'Ничего'])
-      if (t && t !== IN_CHAT && t !== 'Ничего') a.fixTask(t)
-    }),
-    askVerdict: () => later(async () => {
-      const kind = await ask('Что делаем с работой?', ['Принять с правками', 'Вернуть на доработку', 'Пока ничего'])
-      if (!kind || kind === 'Пока ничего') return
-      const v: VerdictKind = kind === 'Принять с правками' ? 'fixes' : 'return'
-      // a text typed under "Other" for the first question is itself the remark: send it back
-      const typed = kind !== 'Принять с правками' && kind !== 'Вернуть на доработку' ? kind : ''
-      const remark = typed || (await ask('Что поправить? Впишите в «Other».', [IN_CHAT, 'Без комментария']))
-      if (!remark) return
-      if (remark !== 'Без комментария') {
-        const text = remark === IN_CHAT ? 'Правки напишу следующим сообщением в чате.' : remark
-        await update($, verdict, x => ({ ...x, general: [...x.general, text] }))
-      }
-      await sendVerdict($, typed ? 'return' : v)
-    }),
-    askNewTask: () => later(async () => {
-      const t = await ask('Какую задачу поставить? Опишите её в «Other».', [IN_CHAT, 'Оформить текущую работу'])
-      if (t === 'Оформить текущую работу') a.formalize()
-      else if (t && t !== IN_CHAT) a.newTask(t)
-    }),
-    askNote: () => later(async () => {
-      const t = await ask('Что передать Claude? Впишите в «Other».', [IN_CHAT, 'Ничего'])
-      if (t && t !== IN_CHAT && t !== 'Ничего') say($, t)
-    }),
-    publishReport: () => later(async () => {
-      const path = await buildReport($)
-      if (!path) {
-        $.ui.toast('Доска: у задачи ещё нет папки, отчёта нет')
-        return
-      }
-      await sendOnce($, 'publish-report', `Опубликуй HTML-отчёт задачи (${path}) приватной страницей claude.ai и пришли ссылку. Это моё разрешение на одну публикацию этого отчёта.`)
-    }),
+  const LATER = 'Позже'
+  if (!t || t.phase === 'accepted') {
+    const x = await ask('Задания нет. Какую задачу поставить? Опишите её в «Other».', [IN_CHAT, LATER])
+    if (x && x !== IN_CHAT && x !== LATER) await sendOnce($, 'intake', `Новая задача: ${x}`)
+    return
   }
-}
-
-async function mobileBoard($: EngineInterface, e: { surface: 'mobile' }, bodyColumns: number) {
-  const els = $.ui.resolve(e as never) as unknown as Parameters<typeof MobileBoard>[0]
-  const d = { ledger: await read($, ledger), width: Math.max(20, bodyColumns - 1), sent: (await read($, sent)).map(x => x.key) }
-  return MobileBoard(els, d, mobileActions($, boardActions($)))
+  if (t.phase === 'intake') {
+    const x = await ask(`Задание «${t.title.ru}» ждёт старта. Что делаем?`, ['Старт', 'Поправить задание', LATER])
+    if (x === 'Старт') return startTask($)
+    const fix = x === 'Поправить задание' ? await ask('Что поправить в задании? Впишите в «Other».', [IN_CHAT, LATER]) : x
+    if (fix && fix !== IN_CHAT && fix !== LATER && fix !== 'Поправить задание') {
+      await sendOnce($, 'fix', `Поправь задание: ${fix}. Обнови бриф через тул task и жди «Старт».`)
+    }
+    return
+  }
+  if (t.phase === 'review') {
+    const x = await ask(`Работа «${t.title.ru}» сдана: ${verdictLine(criteriaOf(L))}. Что делаем?`, ['Принять', 'Вернуть на доработку', 'Принять с правками', LATER])
+    if (!x || x === LATER) return
+    if (x === 'Принять') return void (await sendVerdict($, 'accept'))
+    const kind: VerdictKind = x === 'Принять с правками' ? 'fixes' : 'return'
+    // a text typed under "Other" on the first question is itself the remark
+    const typed = x !== 'Вернуть на доработку' && x !== 'Принять с правками' ? x : ''
+    const remark = typed || (await ask('Что поправить? Впишите в «Other».', [IN_CHAT, 'Без комментария']))
+    if (!remark) return
+    if (remark !== 'Без комментария') {
+      const text = remark === IN_CHAT ? 'Правки напишу следующим сообщением в чате.' : remark
+      await update($, verdict, v => ({ ...v, general: [...v.general, text] }))
+    }
+    await sendVerdict($, typed ? 'return' : kind)
+    return
+  }
+  // work: the first question that waits for the person
+  const q = waitingQuestions(L)[0]
+  if (!q) return
+  const options = [...(q.options ?? []).slice(0, 2), IN_CHAT, LATER]
+  const x = await ask(`${q.title.ru.replace(/[?.]$/, '')}? Свой ответ впишите в «Other».`, options)
+  if (!x || x === IN_CHAT || x === LATER) return
+  await commit($, [{ op: 'update', id: q.id, status: 'answered' }], current?.n ?? L.turns.at(-1)?.n ?? 1, 'user')
+  say($, `Ответ на твой вопрос «${q.title.ru}»: ${x}`)
 }
 
 export const register: Register = (on, options) => {
@@ -912,28 +898,14 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  on('command.run', { command: 'board' }, async $ => {
+  on('command.run', { command: 'board' }, async ($, e) => {
+    if (e.origin?.kind === 'bridge') {
+      // a phone or a browser: mods draw nothing there, so the board is text plus a question
+      $.clock.after(0, () => void askNext($).catch(() => undefined))
+      return { text: boardText(await read($, ledger)) }
+    }
     await $.ui.open({ id: PANE, title: TITLE })
-    const L = await read($, ledger)
-    const t = L.task
-    return { text: t ? `Доска: «${t.title.ru}», фаза ${t.phase}, ${verdictLine(criteriaOf(L))}.` : 'Доска: задания нет.' }
-  })
-
-  // the card under /board: the phone has no band above the prompt, so the board can live in the transcript too
-  on('ui.render', { component: 'CommandOutput', props: { command: 'board' } }, async ($, e) => {
-    if (e.surface === 'mobile') return mobileBoard($, e, 60)
-    const els = $.ui.resolve(e)
-    const Svg = 'Svg' in els ? els.Svg : undefined
-    const card = { Box: els.Box, Text: els.Text, Button: els.Button, ...(Svg ? { Svg } : {}) } as unknown as Parameters<typeof MobileBoard>[0]
-    const d = { ledger: await read($, ledger), width: 60, sent: (await read($, sent)).map(x => x.key) }
-    return MobileBoard(card, d, mobileActions($, boardActions($)))
-  })
-
-  // a phone joined over Remote Control: put the board in front of it
-  on('session.attach', { surface: 'mobile' }, async ($, e, next) => {
-    const r = await next(e)
-    openBoard($)
-    return r
+    return { text: 'Session board opened.' }
   })
 
   on('command.run', { command: 'board-update' }, async $ => {
@@ -968,14 +940,25 @@ export const register: Register = (on, options) => {
     await update($, live, () => [])
     const fromPerson = USER_ORIGINS.has(e.origin?.kind)
     const fromBoard = e.origin?.kind === 'plugin'
+    // «Старт», «Принять», «Вернуть: …» typed in the chat (a phone has no board buttons) press the button, and the
+    // message Claude gets is the one the button would send, not a second one
+    const word = fromPerson ? parseChatCommand(e.text, L.task?.phase) : null
+    let text = e.text
+    if (word) {
+      if (word.kind === 'start') text = (await startTask($, false)) || text
+      else {
+        if (word.kind !== 'accept') await update($, verdict, v => ({ ...v, general: [...v.general, word.remark] }))
+        text = (await sendVerdict($, word.kind, false)) || text
+      }
+    }
     if (fromBoard) await update($, sent, list => list.map(x => (x.text === e.text ? { ...x, started: true } : x)))
     // The person wrote in the chat: their message probably answers the open questions. Take the cards down now;
     // the cartographer marks each one answered, or opens it again when the message did not answer it.
-    if (fromPerson && current.ask) {
+    if (fromPerson && current.ask && !word) {
       const waiting = L.nodes.filter(n => n.kind === 'open' && n.status === 'open' && (n.ask ?? 'user') === 'user')
       if (waiting.length) await commit($, waiting.map(n => ({ op: 'update' as const, id: n.id, status: 'pending' })), current.n, 'user')
     }
-    if (!fromPerson && !fromBoard) return next(e)
+    if (!fromPerson && !fromBoard) return next(text === e.text ? e : { ...e, text })
     // what Claude reads beside the prompt and the person never sees: the protocol once a session, the board notes
     const extra: string[] = []
     if (sessionId && (await read($, greeted)) !== sessionId) {
@@ -987,7 +970,8 @@ export const register: Register = (on, options) => {
       extra.push(`Notes the person added on the session board since their last message. Apply them:\n${queued.map(n => `- ${n}`).join('\n')}`)
       await update($, notes, () => [])
     }
-    return next(extra.length ? { ...e, context: [...(e.context ?? []), ...extra] } : e)
+    const out = text === e.text ? e : { ...e, text }
+    return next(extra.length ? { ...out, context: [...(out.context ?? []), ...extra] } : out)
   })
 
   on('tool.call', async ($, e, next) => {
@@ -1125,7 +1109,7 @@ export const register: Register = (on, options) => {
     if (!op) return reply('Not recorded: kind and title are required.')
     const [added] = await commit($, [op], turn, 'claude')
     if (current && added) current.touched.push(added)
-    if (i.kind === 'open' && (s('ask') ?? 'user') === 'user') await push($, `Нужен ваш ответ: ${s('title_ru') ?? s('title') ?? ''}`)
+    if (i.kind === 'open' && (s('ask') ?? 'user') === 'user') await push($, `Нужен ваш ответ: ${s('title_ru') ?? s('title') ?? ''} Ответьте сообщением или наберите /board.`)
     return reply(`Recorded ${added}.`)
   })
 
@@ -1174,7 +1158,7 @@ export const register: Register = (on, options) => {
     await update($, editing, () => '')
     await refreshOpenTasks($)
     openBoard($)
-    if (task.phase === 'intake') await push($, `Задание готово: «${task.title.ru}». Проверьте его и нажмите «Старт».`)
+    if (task.phase === 'intake') await push($, `Задание готово: «${task.title.ru}». Ответьте «Старт» или наберите /board.`)
     const kept = waiting ? ` The previous task «${waiting.title.en}» still waits for the person's verdict in ${waiting.dir || 'its folder'}.` : ''
     return reply(task.phase === 'intake'
       ? `Task brief recorded${dir ? ` in ${dir}/task.md` : ''}.${kept} End your turn now: the person reviews the brief on the board and presses Start. Do not start the work before that.`
@@ -1215,7 +1199,7 @@ export const register: Register = (on, options) => {
     }
     openBoard($)
     $.ui.toast(closing ? 'Правки внесены, задача закрыта' : 'Работа сдана: открой «Приёмку»')
-    if (!closing) await push($, `Работа сдана: «${t.title.ru}». ${verdictLine(criteriaOf(await read($, ledger)))}. Примите или верните.`)
+    if (!closing) await push($, `Работа сдана: «${t.title.ru}». ${verdictLine(criteriaOf(await read($, ledger)))}. Ответьте «Принять» или наберите /board.`)
     const missing = crit.filter(c => !items.some(it => it.id === c.id)).map(c => c.id)
     return reply(closing
       ? `Fixes recorded; the task is closed.${path ? ` Report: ${path}.` : ''}`
@@ -1225,7 +1209,6 @@ export const register: Register = (on, options) => {
   // ---------- drawing ----------
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    if (e.surface === 'mobile') return mobileBoard($, e, e.props.bodyColumns)
     if (e.surface !== 'desktop' && e.surface !== 'terminal') {
       const { Markdown } = $.ui.resolve(e)
       return <Markdown text={renderMarkdown(await read($, ledger), 'ru').slice(0, 9000)} />
