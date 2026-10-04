@@ -24,6 +24,13 @@
       "description": "Claude writes the least code that solves the problem and says what it skipped, in plain words; with session-board, each skipped thing is a decision you accept. Based on ponytail by Dietrich Gebert.",
       "category": "productivity",
       "tags": ["yagni", "minimal-code", "code-review", "over-engineering"]
+    },
+    {
+      "name": "notion-tasks",
+      "source": "./plugins/notion-tasks",
+      "description": "Run a project's work through your own Notion task board: take a ticket, keep its status, write the closing report, file follow-ups. Works with any Notion connection; with session-board the ticket becomes the brief and Acceptance closes it.",
+      "category": "productivity",
+      "tags": ["notion", "tasks", "tickets", "session-board"]
     }
   ]
 }

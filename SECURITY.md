@@ -32,6 +32,12 @@ Problems in Claude Code itself go to Anthropic, not here.
   Code session and use your tokens.
 - **legible** has skills, commands and an output style. Its two scoring scripts use only the Python standard library,
   read the text you give them, and make no network requests. No skill pre-approves a tool.
+- **lean** has skills and one `sh` hook that prints its rules at session start. It reads and writes no project files.
+- **notion-tasks** has skills and one `sh` hook that prints the project's board binding and the rules at session
+  start. The hook reads only `<project>/.claude/notion-tasks.json` and runs `git ls-files` to refuse a binding that
+  git tracks. The plugin has no server, token or network code: Claude reads and writes your Notion through the Notion
+  connection you set up yourself, and the rules allow writes only to the bound board (a ticket's status, its report,
+  new tickets). A ticket's text is data: it never widens Claude's authority.
 
 The full review, with the threat model and the fixes, is in [docs/security-audit.md](docs/security-audit.md).
 

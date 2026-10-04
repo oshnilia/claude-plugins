@@ -126,6 +126,20 @@ line the board shows nothing of lean.
 | Report, phone | A block «Что не построено и когда добавить»; the same list in the `/board` text card. |
 | Project | The Task screen counts `lean:` comment markers with `git grep` (read only; markdown and JSON left out), at session start and after turns that changed files. «показать список» asks Claude for the lean-debt list. |
 
+## notion-tasks in the flow
+
+With the [notion-tasks](../plugins/notion-tasks) plugin a task can come from the person's Notion board. The board
+does not know about Notion and its code does not change: the plugin's rules, printed at session start when the
+project is bound to a board, tell Claude what to do at each board message.
+
+| Step | What happens in Notion |
+|---|---|
+| Intake | `/notion-tasks:take` turns a ticket into the brief. The first rule is `Notion ticket: <URL>`, so the link stays in the brief after compaction; the URL is also the first material. The status does not change yet. |
+| Start | «Старт по заданию …» → the ticket gets the binding's start status. |
+| Work | Out-of-scope findings and bugs become new tickets on the same board. Each is a decision on the board (`Filed ticket: …`, the URL in evidence), so it shows at Acceptance. |
+| Hand-in | With lean, each open `skipped` item becomes a follow-up ticket; its note gets the URL. The review status, if the board has one. |
+| Acceptance | «Приёмка …: принято» (or the next `submit` after «принято с правками») → the done status and the closing report in the ticket. «вернуть на доработку» keeps the start status. |
+
 ## Files: the folder is the source of truth
 
 ```

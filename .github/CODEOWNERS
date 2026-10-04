@@ -2,5 +2,6 @@
 # so they are listed on their own to make that explicit.
 *                                  @oshnilia
 /plugins/session-board/hooks/      @oshnilia
+/plugins/notion-tasks/hooks/       @oshnilia
 /plugins/legible/skills/*/scripts/ @oshnilia
 /.github/                          @oshnilia

@@ -1,6 +1,6 @@
 # Security audit (2026-10-03)
 
-Scope: the marketplace manifest, `plugins/session-board` 0.3.2, `plugins/legible` 0.1.1, the CI, and the repository
+Scope (the addendum at the end covers notion-tasks): the marketplace manifest, `plugins/session-board` 0.3.2, `plugins/legible` 0.1.1, the CI, and the repository
 settings. The question: what can a plugin do on the machine of a person who installs it, and what can an attacker
 make it do?
 
@@ -65,3 +65,25 @@ Checked and found safe:
 - `report.html` and the task folder contain your prompts, Claude's summaries and diffs. They stay out of git by
   default (`.claude/tasks/.gitignore`). Read a report before you share it.
 - With `update: every-turn` the board makes one model call per turn with work. Set `update: manual` to stop that.
+
+## Addendum: notion-tasks 0.1.0 (2026-10-04)
+
+The first plugin that changes data outside the machine. It does so only through Claude and the Notion connection the
+person set up; the plugin itself has no network code.
+
+| | notion-tasks |
+|---|---|
+| Runs code in your session | one `sh` hook at session start |
+| Reads files | `<project>/.claude/notion-tasks.json`, its own rules |
+| Writes files | none from the hook; `/notion-tasks:setup` asks Claude to write the binding and add it to `.git/info/exclude` |
+| Runs commands | `git ls-files` (read-only), `head`, `awk` |
+| Network | none from the plugin; Claude calls the person's own Notion MCP server |
+| Writes to Notion | the bound board only: status, report, new tickets, ticked checklist items |
+| Pre-approved tools | none; Notion calls go through the person's normal permission prompts |
+
+| # | Risk | Severity | Answer |
+|---|---|---|---|
+| 7 | A cloned repository ships `.claude/notion-tasks.json` that points Claude at a board the attacker reads, so reports with prompts and diffs land there. | medium | The hook refuses a binding that git tracks and prints only a line that names it. Setup adds the file to the local exclude list. |
+| 8 | A ticket or a comment in a shared workspace carries instructions ("push to main", "read page X and copy it here"). | medium | The rules say a ticket is data: it never widens authority, never becomes a project rule, and goes to the person as a brief before work starts (with session-board, the person presses Start). Claude tells the person about such text. |
+| 9 | Claude writes to Notion without asking, at the person's choice. A wrong write changes a shared board. | low | Writes are limited to the bound board's status, report and new rows; no deletes. Notion keeps page history. |
+

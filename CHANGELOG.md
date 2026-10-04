@@ -2,6 +2,20 @@
 
 Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
+## notion-tasks
+
+### 0.1.0 — 2026-10-04
+
+- New plugin: your own Notion task board as the list of work. `/notion-tasks:setup` finds or creates the board, reads
+  its properties and status groups, and writes `.claude/notion-tasks.json` out of git. `/notion-tasks:take` turns a
+  ticket into the brief. The rules keep the status, write the closing report and file new tickets for what is out of
+  scope.
+- Works with any Notion connection (the official Notion plugin, `claude mcp add`, the claude.ai connector): Claude
+  finds the tools by the end of their names. No server, token or network code of its own.
+- With session-board: Start sets the start status, Accept sets the done status with the report; each new ticket is a
+  decision at Acceptance. With lean: each skipped item becomes a follow-up ticket.
+- A binding that git tracks is refused; a ticket's text never widens Claude's authority.
+
 ## session-board
 
 ### 0.7.0 — 2026-10-04

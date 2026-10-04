@@ -46,6 +46,9 @@ With [`session-board`](../session-board) 0.7.0 or later, lean is part of each st
 lean does not need session-board and does not change it: the rules ask Claude to use the tools the board gives, and
 the board reads lean's session-start line. Details: [docs/board-logic.md](../../docs/board-logic.md#lean-in-the-flow).
 
+With [`notion-tasks`](../notion-tasks), each skipped thing that is still open at hand-in becomes a follow-up ticket on
+your Notion board.
+
 ## Install
 
 ```bash
