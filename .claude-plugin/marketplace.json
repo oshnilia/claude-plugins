@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-marketplace.json",
   "name": "oshn",
-  "description": "Plugins and mods that help you understand what Claude does: legible answer formats and a live session board.",
+  "description": "Plugins and mods that help you understand what Claude does: legible answer formats, a live session board, and lean code you accept item by item.",
   "owner": { "name": "Ilia", "url": "https://github.com/oshnilia" },
   "plugins": [
     {
@@ -17,6 +17,13 @@
       "description": "Desktop mod for people who run many sessions: a task brief at the start, an acceptance screen and an HTML report at the end, and a task folder that survives compaction.",
       "category": "productivity",
       "tags": ["mod", "desktop", "observability", "ledger"]
+    },
+    {
+      "name": "lean",
+      "source": "./plugins/lean",
+      "description": "Claude writes the least code that solves the problem and says what it skipped, in plain words; with session-board, each skipped thing is a decision you accept. Based on ponytail by Dietrich Gebert.",
+      "category": "productivity",
+      "tags": ["yagni", "minimal-code", "code-review", "over-engineering"]
     }
   ]
 }

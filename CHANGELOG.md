@@ -111,7 +111,25 @@ Security:
 - First version: plain English and plain Russian with measured strictness, diagram-first, visual explainer, format
   router, teach-back, the `plain-80` output style and four commands.
 
+## lean
+
+### 0.1.0 — 2026-10-04
+
+- New plugin, based on [ponytail](https://github.com/DietrichGebert/ponytail) 4.10.3 by Dietrich Gebert (MIT). Claude
+  writes the least code that solves the problem: is it needed at all, is it already in the codebase, the standard
+  library, the platform, an installed dependency, one line, and only then new code.
+- After the code, at most three lines `Skipped: <what>. Add when <trigger>.` in the user's language, in plain words.
+- With session-board, each skipped thing and each `lean:` shortcut is also a decision in the board's ledger.
+- Levels lite, full and ultra; the `level` option sets the level at session start, `/lean <level>` switches it for the
+  session. `/lean-review` finds what to cut in a diff or the whole repository; `/lean-debt` lists `lean:` shortcuts.
+- One `sh` hook, no Node.js and no files outside the plugin. Five eval cases with and without the plugin.
+
 ## Repository
+
+### 2026-10-04
+
+- The CI check for personal data checks each match on its own and allows the reserved example domains
+  (example.com, .org, .net) that eval cases use. CI also tests the lean hook.
 
 ### 2026-10-03 — ready to share
 

@@ -8,6 +8,7 @@ a session into a task with a brief at the start and an acceptance at the end.
 |---|---|---|
 | [`session-board`](plugins/session-board) | A mod for people who run many sessions at once. Two touches per task: a brief with criteria and authority at the start, an Acceptance screen and an interactive HTML report at the end; Claude works alone in between. The task folder keeps the ledger, so compaction loses nothing. Board texts are in Russian. | Claude Code desktop (Code tab) and terminal |
 | [`legible`](plugins/legible) | Karpathy's format ladder: ASD-STE100 text and plain Russian at a measurable strictness, diagram-first answers, HTML explainers, animated step players, teach-back checks | Claude Code; the skills also work on claude.ai |
+| [`lean`](plugins/lean) | Claude writes the least code that solves the problem: reuse, standard library and platform before new code. It says in plain words what it skipped and when to add it; with session-board, each skipped thing is a decision you accept. Based on [ponytail](https://github.com/DietrichGebert/ponytail). | Claude Code |
 
 ## Install
 
@@ -17,6 +18,7 @@ In a terminal:
 claude plugin marketplace add oshnilia/claude-plugins
 claude plugin install session-board@oshn
 claude plugin install legible@oshn
+claude plugin install lean@oshn
 ```
 
 Or inside a Claude Code session: `/plugin marketplace add oshnilia/claude-plugins`, then `/plugin install …`.
@@ -44,7 +46,7 @@ claude plugin update session-board@oshn
 
 ## Data and safety
 
-- **No network.** Neither plugin sends data anywhere. session-board's model calls go through your own Claude Code
+- **No network.** No plugin sends data anywhere. session-board's model calls go through your own Claude Code
   session and use your tokens.
 - **Local files only.** session-board writes only to `<project>/.claude/tasks/` and `<project>/.claude/session-board/`.
   Task folders stay out of git by default. A report contains your prompts, Claude's summaries and diffs: read it
@@ -82,7 +84,7 @@ and never claims compliance. License: [MIT](LICENSE).
 
 ## По-русски
 
-Модели делают всё больше работы, а наше время уходит на то, чтобы **понимать и проверять** её. Здесь два плагина.
+Модели делают всё больше работы, а наше время уходит на то, чтобы **понимать и проверять** её. Здесь три плагина.
 
 - **session-board** — мод для тех, кто ведёт много сессий сразу. Два касания на задачу: в начале задание со всеми
   вводными (цель, результат, пункты «готово, когда», полномочия), в конце приёмка одним вердиктом и интерактивный
@@ -90,6 +92,10 @@ and never claims compliance. License: [MIT](LICENSE).
   папке задачи, поэтому сжатие переписки ничего не теряет. Подробно — в [README доски](plugins/session-board/README.md).
 - **legible** — лестница форматов Карпаты: текст в ASD-STE100 и простой технический русский с измеримой строгостью,
   схема, HTML-страница, пошаговая анимация, проверка понимания. Подробно — в [README legible](plugins/legible/README.md).
+- **lean** — Claude пишет минимум кода: сначала то, что уже есть в проекте, стандартная библиотека и возможности
+  платформы, потом своё. После кода — строки «Пропущено: … Добавить, когда …». С доской каждое такое решение
+  попадает на приёмку. Основан на [ponytail](https://github.com/DietrichGebert/ponytail) Dietrich Gebert (MIT).
+  Подробно — в [README lean](plugins/lean/README.md).
 
 ### Установка
 
@@ -99,6 +105,7 @@ and never claims compliance. License: [MIT](LICENSE).
 claude plugin marketplace add oshnilia/claude-plugins
 claude plugin install session-board@oshn
 claude plugin install legible@oshn
+claude plugin install lean@oshn
 ```
 
 Или внутри сессии Claude Code: `/plugin marketplace add oshnilia/claude-plugins`, затем `/plugin install …`.
@@ -111,6 +118,7 @@ claude plugin install legible@oshn
 ### Данные и безопасность
 
 - Плагины ничего не отправляют в сеть. Вызовы модели у доски идут через твою же сессию и тратят твои токены.
+- lean — это текст и один хук на `sh`: при старте сессии он печатает правила. Файлы проекта он не читает и не пишет.
 - Доска пишет только в `<проект>/.claude/tasks/` и `<проект>/.claude/session-board/`; папки задач не попадают в git.
   В отчёте твои запросы, сводки Claude и изменения — прочитай его, прежде чем кому-то отправить.
 - Мод выполняет код в твоей сессии с твоими правами: только `git` на чтение, `open` и `mv` внутри папки задачи.

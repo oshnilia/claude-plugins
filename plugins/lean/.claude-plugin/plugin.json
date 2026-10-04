@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
+  "name": "lean",
+  "version": "0.1.0",
+  "description": "Claude writes the least code that solves the problem: reuse, standard library and platform before new code. What it skipped goes to a short plain-language line and, with session-board, to the board for your acceptance. Based on ponytail by Dietrich Gebert.",
+  "author": { "name": "Ilia", "url": "https://github.com/oshnilia" },
+  "homepage": "https://github.com/oshnilia/claude-plugins/tree/main/plugins/lean",
+  "repository": "https://github.com/oshnilia/claude-plugins",
+  "license": "MIT",
+  "keywords": ["yagni", "minimal-code", "code-review", "over-engineering", "session-board", "russian"],
+  "userConfig": {
+    "level": {
+      "type": "string",
+      "title": "Level at session start",
+      "description": "lite: build what you ask and name the smaller option. full: the ladder, shortest working diff. ultra: delete before add. off: no rules until you type /lean.",
+      "options": ["full", "lite", "ultra", "off"],
+      "default": "full"
+    }
+  }
+}
