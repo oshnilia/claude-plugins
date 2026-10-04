@@ -99,6 +99,22 @@ repeat the pane: the pane is for the verdict, the report is for understanding th
 The map stays inside the page column: its spacing shrinks to fit, and what still does not fit scrolls inside the frame. Reduced motion shows the final map at once. On a phone the details open as a bottom sheet. "Открыть отчёт" rebuilds the page every time.
 The verdict lives in the pane, not in the report: a local page cannot write into the session.
 
+## Free mode
+
+Some sessions do not close one task: the person wants to discuss, brainstorm, try a prototype, iterate, work outside
+the tickets. «Свободный режим» leaves the strict path and keeps what helps there.
+
+| Step | What happens |
+|---|---|
+| Switch | A button on the Task screen (with no task, on a strict task in any phase, after a summary) or the chat word «Свободный режим». A formal task that is not accepted pauses: it keeps its phase and folder and waits under «Начатые задачи». Work without a brief carries on as the free session. The task gets `mode: 'free'`, phase `work`, no criteria. |
+| Work | Claude works as a partner: talks, offers options, asks freely, prototypes. It keeps idea threads with the note tool (kind `idea`: open, trying, kept, dropped). The Work screen shows the ideas, the goals the cartographer finds and the question cards; the band shows `свободный режим · идей N · оставили K` and «Подвести итог». |
+| Summary | «Подвести итог» (button, band, chat word «Итог») asks Claude to give each idea its final status and call `submit` without criteria. The board sets phase `accepted`, writes `summary.md` and shows it on the «Итог» tab: kept, dropped with the reason, undecided, decisions, next, for you. No verdict, no report. |
+| After | A new brief from free mode starts a fresh task; the free session stays in its folder. «Продолжить здесь» brings back a paused task. |
+
+The board's own messages never pass the board's `prompt.submit` hook (the engine skips the caller), so the switch
+message carries the key rules in its text; the full free-mode protocol rides with the person's next message and after
+compaction. A chat word passes the hook, so there the protocol comes in the same turn.
+
 ## The verdict
 
 | Verdict | Effect |
@@ -139,6 +155,7 @@ project is bound to a board, tell Claude what to do at each board message.
 | Work | Out-of-scope findings and bugs become new tickets on the same board. Each is a decision on the board (`Filed ticket: …`, the URL in evidence), so it shows at Acceptance. |
 | Hand-in | With lean, each open `skipped` item becomes a follow-up ticket; its note gets the URL. The review status, if the board has one. |
 | Acceptance | «Приёмка …: принято» (or the next `submit` after «принято с правками») → the done status and the closing report in the ticket. «вернуть на доработку» keeps the start status. |
+| Free mode | No ticket, no status, no report. At the summary each kept idea that still needs work becomes a follow-up ticket; its URL goes into the idea's evidence, so the summary shows it. |
 
 ## Files: the folder is the source of truth
 
@@ -156,6 +173,7 @@ project is bound to a board, tell Claude what to do at each board message.
     brief.md            # the short brief Claude gets after compaction
     report.html         # the report, after submit
     feedback.md         # every review round
+    summary.md          # the summary of a free session
 .claude/session-board/<session id>/task.json   # which task this session works on
 ```
 

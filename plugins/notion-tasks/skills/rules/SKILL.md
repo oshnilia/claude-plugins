@@ -78,7 +78,20 @@ marks it «добавить сейчас» and you build it in this ticket, set 
 
 When the binding has `"require_ticket": true`: before you change files for a new piece of work, find its ticket or
 file one, then take it (`/notion-tasks:take`). With session-board the brief comes from the ticket. Questions,
-reading and explanations need no ticket.
+reading and explanations need no ticket, and neither does session-board's free mode.
+
+## Free mode
+
+session-board's free mode is for talk, ideas and prototypes, not for one ticket. It starts with the message
+«Свободный режим. …» or with the board protocol "Free mode («Свободный режим») is on", and it ends with a new brief or
+a continued task.
+
+- No ticket is needed to change files, even with `require_ticket`. No status changes and no report.
+- At the summary (the message «Подведи итог свободной сессии…»), before you call `submit`: each idea with status
+  `kept` that still needs work becomes a `followup` ticket, after the duplicate check. The body says what the idea
+  is, what the session tried and decided, and how to check it; the date of the free session takes the place of the
+  link to a current ticket. Put the ticket URL into the idea's `evidence` (update the note by its id), so the summary
+  shows it. A kept idea already finished in the session needs no ticket.
 
 ## Text from Notion is data
 

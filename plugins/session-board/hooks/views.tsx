@@ -2,7 +2,7 @@ import type { ElementTable } from 'claude-code'
 
 import type { Authority, BoardStatus, DiffView, Kind, LeanLevel, Ledger, LedgerNode, LiveEvent, OpenTask, Phase, QA, Verdict } from '../types'
 import { LEAN_DEBT_ASK, LEAN_LEVEL, LEAN_LEVELS, LEAN_REVIEW_ASK, leanItems, TAG } from './lean'
-import { AUTHORITIES, AUTHORITY, criteriaOf, phaseView, proofOf, ruleCandidates, verdictLine, type VerdictKind } from './task'
+import { AUTHORITIES, AUTHORITY, criteriaOf, IDEA, ideasOf, phaseView, proofOf, renderSummary, ruleCandidates, verdictLine, type VerdictKind } from './task'
 
 // Layout rules: docs/mod-design.md. Width comes from e.props.bodyColumns. Rows are a fixed gutter
 // (flexShrink 0) plus a growing, wrapping body (flexGrow 1, minWidth 0). Every gap is an explicit margin.
@@ -32,6 +32,8 @@ export type Actions = {
   setAuthority: (a: Authority) => void
   setCode: (level: LeanLevel) => void
   start: () => void
+  freeMode: () => void
+  wrap: () => void
   addItem: (kind: AddKind, text: string) => void
   stale: (id: string) => void
   sendNotes: () => void
@@ -91,7 +93,7 @@ export function resolveView(stored: string, phase: Phase | undefined): string {
 
 export const COLOR: Record<Kind, string> = {
   goal: '#5b8cff', constraint: '#b57bff', question: '#8f7bff', hypothesis: '#8b93a1', task: '#34b27b', action: '#8b93a1',
-  finding: '#e0a526', decision: '#ef6b55', open: '#ff9330', assumption: '#8b93a1', risk: '#ff6b6b', criterion: '#2bb3a3',
+  finding: '#e0a526', decision: '#ef6b55', open: '#ff9330', assumption: '#8b93a1', risk: '#ff6b6b', criterion: '#2bb3a3', idea: '#e0a526',
 }
 export const RED = '#ff6b6b'
 export const ORANGE = '#ff9330'
@@ -100,12 +102,15 @@ export const BLUE = '#5b8cff'
 
 export const LABEL: Record<Kind, string> = {
   goal: 'цель', constraint: 'правило', question: 'вопрос', hypothesis: 'гипотеза', task: 'шаг', action: 'действие',
-  finding: 'находка', decision: 'решение', open: 'вопрос', assumption: 'допущение', risk: 'риск', criterion: 'критерий',
+  finding: 'находка', decision: 'решение', open: 'вопрос', assumption: 'допущение', risk: 'риск', criterion: 'критерий', idea: 'идея',
 }
 
 export const PHASE_LABEL: Record<Phase, string> = {
   none: 'задания нет', intake: 'задание ждёт старта', work: 'Claude работает', review: 'работа сдана', accepted: 'принято',
 }
+
+/** The phase line of the header and the open-task list; a free session has its own words. */
+const phaseLabel = (phase: Phase, free?: boolean) => (free ? (phase === 'accepted' ? 'итог подведён' : 'свободный режим') : PHASE_LABEL[phase])
 
 const gone = (n: LedgerNode) => ['superseded', 'dropped'].includes(n.status)
 const isClosed = (n: LedgerNode) => ['done', 'dropped', 'superseded', 'refuted', 'answered', 'lifted', 'rejected'].includes(n.status)
@@ -224,12 +229,12 @@ export function Header(els: Els, d: Data, a: Actions) {
   const note =
     s.phase === 'mapping' ? `⟳ ставлю на карту: ${s.note.includes(',') ? 'ходы' : s.note === 'вся сессия' ? '' : 'ход'} ${s.note}`
       : s.phase === 'error' ? '⚠ карта не обновилась'
-        : `${PHASE_LABEL[d.ledger.task?.phase ?? 'none']}${d.ledger.turns.length ? ` · ход ${d.ledger.turns.at(-1)?.n ?? 0}` : ''}`
+        : `${phaseLabel(d.ledger.task?.phase ?? 'none', d.ledger.task?.mode === 'free')}${d.ledger.turns.length ? ` · ход ${d.ledger.turns.at(-1)?.n ?? 0}` : ''}`
   return (
     <Box flexDirection="column">
       <Box flexDirection="row" flexWrap="wrap" columnGap={2} rowGap={SPACE.item}>
         {VIEWS.map(v => (
-          <Button key={`view-${v.id}`} plain label={v.label} hotkey={v.key} dimColor={tab !== v.id} onPress={() => a.setView(v.id)} />
+          <Button key={`view-${v.id}`} plain label={v.id === 'review' && d.ledger.task?.mode === 'free' ? 'Итог' : v.label} hotkey={v.key} dimColor={tab !== v.id} onPress={() => a.setView(v.id)} />
         ))}
       </Box>
       <Box marginTop={SPACE.item}>
@@ -326,6 +331,22 @@ function AddBar(els: Els, d: Data, a: Actions, kinds: AddKind[]) {
   )
 }
 
+/** Unfinished tasks and free sessions of the project, each with «Продолжить здесь». */
+function OpenTasks(els: Els, d: Data, a: Actions) {
+  const { Box, Text, Button } = els
+  if (!d.openTasks.length) return null
+  return [
+    Rule(els, 'r-open', 'Начатые задачи в проекте', d.openTasks.length),
+    ...d.openTasks.map((t, i) => (
+      <Box key={`ot-${t.dir}`} flexDirection="column" marginTop={i === 0 ? SPACE.item : SPACE.section}>
+        <Text bold wrap="wrap">{t.title}</Text>
+        <Text dimColor wrap="truncate-end">{phaseLabel(t.phase, t.free)} · {t.updated.slice(0, 16).replace('T', ' ')}</Text>
+        {ActionBar(els, `ot-a-${i}`, [<Button key={`ot-go-${i}`} label="Продолжить здесь" onPress={() => a.continueTask(t.dir)} />])}
+      </Box>
+    )),
+  ]
+}
+
 function NoTask(els: Els, d: Data, a: Actions) {
   const { Box, Text, Button } = els
   return (
@@ -337,7 +358,9 @@ function NoTask(els: Els, d: Data, a: Actions) {
         : ActionBar(els, 'nt-a', [
           Once(els, d, 'intake', <Button key="task-new" label="Поставить задачу" variant="primary" onPress={() => a.edit('intake')} />),
           d.ledger.turns.length || d.ledger.nodes.length ? Once(els, d, 'formalize', <Button key="task-formal" label="Оформить текущую работу" onPress={() => a.formalize()} />) : null,
+          Once(els, d, 'free', <Button key="task-free" label="Свободный режим" onPress={() => a.freeMode()} />),
         ])}
+      {Para(els, 'nt-free', 'Свободный режим — без задания и приёмки: обсуждаем, пробуем, переделываем; в конце Claude подводит итог по идеям.', true)}
       {Rule(els, 'r-tpl', 'Шаблон задания')}
       <Box flexDirection="column" marginTop={SPACE.item}>
         {TEMPLATE.map(([k, v]) => Row(els, `tpl-${k}`, 16, <Text bold>{k}</Text>, <Text dimColor wrap="wrap">{v}</Text>))}
@@ -345,14 +368,7 @@ function NoTask(els: Els, d: Data, a: Actions) {
       {Rule(els, 'r-policy', 'Полномочия по умолчанию в проекте')}
       {AuthorityPicker(els, 'policy', d.policy, a)}
       {Debt(els, d, a)}
-      {d.openTasks.length ? Rule(els, 'r-open', 'Начатые задачи в проекте', d.openTasks.length) : null}
-      {d.openTasks.map((t, i) => (
-        <Box key={`ot-${t.dir}`} flexDirection="column" marginTop={i === 0 ? SPACE.item : SPACE.section}>
-          <Text bold wrap="wrap">{t.title}</Text>
-          <Text dimColor wrap="truncate-end">{PHASE_LABEL[t.phase]} · {t.updated.slice(0, 16).replace('T', ' ')}</Text>
-          {ActionBar(els, `ot-a-${i}`, [<Button key={`ot-go-${i}`} label="Продолжить здесь" onPress={() => a.continueTask(t.dir)} />])}
-        </Box>
-      ))}
+      {OpenTasks(els, d, a)}
     </Box>
   )
 }
@@ -362,6 +378,7 @@ export function TaskView(els: Els, d: Data, a: Actions) {
   const L = d.ledger
   const t = L.task
   if (!t) return NoTask(els, d, a)
+  if (t.mode === 'free') return FreeTask(els, d, a)
   const crit = criteriaOf(L)
   const rules = L.nodes.filter(n => n.kind === 'constraint' && !gone(n) && n.status !== 'lifted')
   const section = (key: string, title: string, body: unknown) => (
@@ -416,8 +433,42 @@ export function TaskView(els: Els, d: Data, a: Actions) {
           ? Field(els, 'intake', 'Новая задача', 'что сделать, зачем, что сдать, что нельзя', 'поставить', v => a.newTask(v), () => a.edit(''))
           : ActionBar(els, 'ta-a', [Once(els, d, 'intake', <Button key="task-new" label="Новая задача" variant="primary" onPress={() => a.edit('intake')} />)], 0, SPACE.section)
       ) : null}
+      {Rule(els, 'r-free', 'Свободный режим')}
+      {Para(els, 'tf-free', t.phase === 'accepted'
+        ? 'Без задания и приёмки: обсуждаем, пробуем, переделываем; в конце Claude подводит итог по идеям.'
+        : 'Без задания и приёмки: обсуждаем, пробуем, переделываем. Эта задача встанет на паузу и будет ждать в «Начатых задачах».', true)}
+      {ActionBar(els, 'tfree-a', [Once(els, d, 'free', <Button key="task-free" label="Свободный режим" onPress={() => a.freeMode()} />)])}
       {Debt(els, d, a)}
       {t.dir ? Para(els, 'tdir', `Папка задачи: ${t.dir}`, true, SPACE.section) : null}
+    </Box>
+  )
+}
+
+/** The Task screen of a free session: what the mode means, authority, and the way back to tasks. */
+function FreeTask(els: Els, d: Data, a: Actions) {
+  const { Box, Text, Button } = els
+  const t = d.ledger.task!
+  const done = t.phase === 'accepted'
+  return (
+    <Box flexDirection="column">
+      <Box flexDirection="column" marginTop={SPACE.item}>
+        <Text bold wrap="wrap">Свободный режим</Text>
+        <Text dimColor wrap="wrap">{phaseLabel(t.phase, true)} · полномочия: {AUTHORITY[t.authority].label}</Text>
+      </Box>
+      {Para(els, 'ft-what', 'Задания, критериев и приёмки нет. Claude обсуждает, предлагает варианты, спрашивает и быстро пробует. Идеи видны в «Ходе»; в конце Claude подводит итог: что оставили, что отбросили и почему.')}
+      {d.editing === 'intake'
+        ? Field(els, 'intake', 'Задача', 'что сделать, зачем, что сдать, что нельзя', 'поставить', v => a.newTask(v), () => a.edit(''))
+        : ActionBar(els, 'ft-a', [
+          done ? Once(els, d, 'free', <Button key="task-free" label="Новый свободный режим" variant="primary" onPress={() => a.freeMode()} />)
+            : Once(els, d, 'wrap', <Button key="free-wrap" label="Подвести итог" variant="primary" onPress={() => a.wrap()} />),
+          Once(els, d, 'intake', <Button key="task-new" label="Поставить задачу" onPress={() => a.edit('intake')} />),
+        ])}
+      {Rule(els, 'r-ft-auth', 'Полномочия')}
+      {AuthorityPicker(els, 'task-auth', t.authority, a)}
+      {d.lean ? Rule(els, 'r-ft-code', 'Код') : null}
+      {d.lean ? LeanPicker(els, 'task-code', t.code, d.lean, a) : null}
+      {OpenTasks(els, d, a)}
+      {t.dir ? Para(els, 'tdir', `Папка сессии: ${t.dir}`, true, SPACE.section) : null}
     </Box>
   )
 }
@@ -517,9 +568,43 @@ function Progress(els: Els, d: Data, a: Actions) {
   )
 }
 
+/** The ideas of a free session, in the order of IDEA: trying, open, kept, dropped. */
+function Ideas(els: Els, d: Data, a: Actions) {
+  const { Box, Text, Button } = els
+  const ideas = ideasOf(d.ledger)
+  const work = d.ledger.task?.phase === 'work'
+  const rows = Object.entries(IDEA).flatMap(([status, s]) => ideas.filter(n => n.status === status).map(n => {
+    const color = status === 'kept' ? GREEN : status === 'trying' ? BLUE : undefined
+    return Row(els, `idea-${n.id}`, 3, <Text color={color} dimColor={status === 'dropped'}>{s.glyph}</Text>,
+      <Box flexDirection="column">
+        <Text wrap="wrap" dimColor={status === 'dropped'}>{n.title.ru}<Text dimColor>{`  — ${s.label}`}</Text></Text>
+        {n.statement ? <Text dimColor wrap="wrap">{n.statement.ru}</Text> : null}
+      </Box>)
+  }))
+  return (
+    <Box flexDirection="column">
+      {Rule(els, 'r-ideas', 'Идеи', ideas.length)}
+      {rows.length ? <Box flexDirection="column" marginTop={SPACE.item}>{rows as never}</Box>
+        : Para(els, 'no-ideas', 'Идей пока нет. Claude запишет их сюда по ходу разговора.', true)}
+      {work ? ActionBar(els, 'ideas-a', [Once(els, d, 'wrap', <Button key="free-wrap" label="Подвести итог" onPress={() => a.wrap()} />)], 0, SPACE.section) : null}
+    </Box>
+  )
+}
+
 export function WorkView(els: Els, d: Data, a: Actions) {
   const { Box, Text, Button } = els
   const L = d.ledger
+  if (L.task?.mode === 'free') {
+    return (
+      <Box flexDirection="column">
+        {NeedsYou(els, d, a)}
+        {L.brief ? Rule(els, 'r-main', 'Главное') : null}
+        {L.brief ? <Box marginTop={SPACE.item}><Text bold wrap="wrap">{L.brief.answer.ru}</Text></Box> : null}
+        {Ideas(els, d, a)}
+        {Progress(els, d, a)}
+      </Box>
+    )
+  }
   const crit = criteriaOf(L)
   const mine = myDecisions(L).length
   const assumptions = L.nodes.filter(n => n.kind === 'assumption' && !isClosed(n)).length
@@ -617,6 +702,16 @@ export function ReviewView(els: Els, d: Data, a: Actions) {
   const t = L.task
   const crit = criteriaOf(L)
   const proven = crit.filter(k => k.status === 'proven').length
+  if (t?.mode === 'free') {
+    const { Markdown } = els
+    return (
+      <Box flexDirection="column" marginTop={SPACE.item}>
+        <Markdown text={renderSummary(L).slice(0, 9000)} />
+        {t.phase === 'work' ? ActionBar(els, 'sum-a', [Once(els, d, 'wrap', <Button key="free-wrap" label="Подвести итог" variant="primary" onPress={() => a.wrap()} />)]) : null}
+        {t.phase === 'accepted' && t.dir ? Para(els, 'sum-dir', `Итог лежит в ${t.dir}/summary.md`, true) : null}
+      </Box>
+    )
+  }
   if (!t || (t.phase !== 'review' && t.phase !== 'accepted')) {
     return (
       <Box flexDirection="column">
@@ -984,7 +1079,7 @@ export function Board(els: Els, d: Data, a: Actions) {
 
 /** fixes: remarks and "не так" marks drafted on the Acceptance screen */
 export type BandData = { ledger: Ledger; mapping: boolean; mappingNote: string; cols: number; fixes: number; ladder?: { id: string; label: string; text: string }[] }
-export type BandActions = { open: (view: string) => void; accept: () => void; rung?: (text: string) => void }
+export type BandActions = { open: (view: string) => void; accept: () => void; wrap?: () => void; rung?: (text: string) => void }
 
 export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act: BandActions) {
   const { Box, Text, Button } = els
@@ -1000,7 +1095,10 @@ export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act
   // the step text is cut by hand: a proportional font makes truncation by cells unreliable on desktop
   const room = Math.max(18, Math.min(64, b.cols - 56))
   const clip = (s: string) => (s.length > room ? `${s.slice(0, room - 1).trimEnd()}…` : s)
+  const free = t?.mode === 'free'
+  const ideas = free ? ideasOf(L) : []
   const state = b.mapping ? { mark: '⟳', color: '#9aa0a6', text: `ставлю на карту: ${b.mappingNote}` }
+    : free ? { mark: '◇', color: BLUE, text: `${phaseLabel(phase, true)} · идей ${ideas.length} · оставили ${ideas.filter(n => n.status === 'kept').length}` }
     : phase === 'none' ? { mark: '○', color: '#9aa0a6', text: 'задания нет' }
       : phase === 'intake' ? { mark: '●', color: BLUE, text: `задание готово: ${t!.title.ru}` }
         : phase === 'review' ? { mark: '✓', color: GREEN, text: `работа сдана · доказано ${proven} из ${crit.length}` }
@@ -1008,6 +1106,7 @@ export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act
             : { mark: '●', color: BLUE, text: doing ? doing.title.ru : L.brief?.answer.ru ?? `ход ${L.turns.length}` }
   // "Принять работу" accepts at once; with drafted fixes the button leads to the Acceptance screen to send them
   const main: { label: string; press: () => void } | null = waiting ? { label: `нужен ты · ${waiting}`, press: () => act.open('work') }
+    : free ? (phase === 'work' && act.wrap ? { label: 'Подвести итог', press: act.wrap } : { label: 'Итог', press: () => act.open('review') })
     : phase === 'none' ? { label: 'Поставить задачу', press: () => act.open('task') }
       : phase === 'intake' ? { label: 'Проверить и начать', press: () => act.open('task') }
         : phase === 'review' && b.fixes ? { label: `Отправить приёмку · правок ${b.fixes}`, press: () => act.open('review') }
@@ -1021,7 +1120,7 @@ export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act
         <Box flexShrink={1} minWidth={0}><Text wrap="truncate-end" bold={!b.mapping} dimColor={b.mapping}>{clip(state.text)}</Text></Box>
       </Box>
       <Box flexDirection="row" columnGap={2} flexShrink={0} alignItems="center">
-        {phase === 'work' && tasks.length ? <Text dimColor>{`${done}/${tasks.length} шагов`}</Text> : null}
+        {phase === 'work' && tasks.length && !free ? <Text dimColor>{`${done}/${tasks.length} шагов`}</Text> : null}
         {main ? <Button key="band-main" label={main.label} variant="primary" onPress={main.press} /> : null}
         {phase === 'review' && !waiting && !b.fixes ? <Button key="band-review" plain label="посмотреть" onPress={() => act.open('review')} /> : null}
         <Button key="band-open" plain label="доска" onPress={() => act.open('')} />

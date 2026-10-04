@@ -2,7 +2,7 @@ export type Txt = { en: string; ru: string }
 
 export type Kind =
   | 'goal' | 'constraint' | 'question' | 'hypothesis' | 'task' | 'action'
-  | 'finding' | 'decision' | 'open' | 'assumption' | 'risk' | 'criterion'
+  | 'finding' | 'decision' | 'open' | 'assumption' | 'risk' | 'criterion' | 'idea'
 
 export type Evidence = { ref: string; type: 'test' | 'code' | 'doc' | 'tool' | 'user' | 'inference' }
 
@@ -107,6 +107,8 @@ export type TaskSpec = {
   submitted?: Submission
   /** false when the task grew out of work without an intake: the board offers to write the brief */
   formal: boolean
+  /** free mode: no brief, no criteria and no acceptance; the work ends with a summary of the ideas */
+  mode?: 'free'
 }
 
 export type Ledger = {
@@ -131,7 +133,7 @@ export type Verdict = {
 export type SentAction = { key: string; text: string; started: boolean }
 
 /** An unfinished task in this project, offered on the Task screen of a new session. */
-export type OpenTask = { dir: string; title: string; phase: Phase; updated: string }
+export type OpenTask = { dir: string; title: string; phase: Phase; updated: string; free?: boolean }
 
 export type LiveEvent = { tool: string; target: string; ok: boolean | null; at: number }
 

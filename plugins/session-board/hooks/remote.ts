@@ -4,11 +4,13 @@
 // press the board's buttons.
 import type { Ledger, Phase } from '../types'
 import { leanItems, TAG } from './lean'
-import { criteriaOf, verdictLine } from './task'
+import { criteriaOf, renderSummary, verdictLine } from './task'
 import { waitingQuestions } from './views'
 
 export type ChatCommand =
   | { kind: 'start' }
+  | { kind: 'free' }
+  | { kind: 'wrap' }
   | { kind: 'accept' }
   | { kind: 'return' | 'fixes'; remark: string }
 
@@ -16,9 +18,14 @@ const START = /^\s*(старт|start|начинай|поехали)\s*[.!]*\s*$/
 const ACCEPT = /^\s*(принять|принимаю|принято|accept)(\s+работу)?\s*[.!]*\s*$/i
 const FIXES = /^\s*(принять\s+с\s+правками|с\s+правками)\s*[:—–-]\s*([\s\S]+)$/i
 const RETURN = /^\s*(вернуть|верни|на\s+доработку|return)\s*[:—–-]\s*([\s\S]+)$/i
+const FREE = /^\s*(свободный\s+режим|free\s+mode)\s*[.!]*\s*$/i
+const WRAP = /^\s*(подвести\s+итог|подведи\s+итог|итог)\s*[.!]*\s*$/i
 
 /** A short word from the person that presses a board button, only in the phase where that button exists. */
-export function parseChatCommand(text: string, phase: Phase | undefined): ChatCommand | null {
+export function parseChatCommand(text: string, phase: Phase | undefined, free = false): ChatCommand | null {
+  const freeWork = free && phase === 'work'
+  if (!freeWork && FREE.test(text)) return { kind: 'free' }
+  if (freeWork && WRAP.test(text)) return { kind: 'wrap' }
   if (phase === 'intake' && START.test(text)) return { kind: 'start' }
   if (phase !== 'review') return null
   if (ACCEPT.test(text)) return { kind: 'accept' }
@@ -29,12 +36,21 @@ export function parseChatCommand(text: string, phase: Phase | undefined): ChatCo
   return null
 }
 
+/** A free session as text: the summary (or the ideas so far), the questions, what to answer. */
+function freeText(L: Ledger): string {
+  const qs = waitingQuestions(L)
+  const hint = L.task?.phase === 'accepted' ? 'Напишите «Свободный режим», чтобы начать новую, или поставьте задачу.'
+    : qs.length ? 'Ответьте на вопрос обычным сообщением.' : 'Напишите «Итог», чтобы подвести итог.'
+  return [renderSummary(L).trim(), ...(qs.length ? ['', '**Нужен ты**', ...qs.map(n => `- ${n.title.ru}`)] : []), '', hint].join('\n')
+}
+
 const mark = (status: string) => (status === 'proven' ? '✓' : status === 'failed' ? '✗' : '○')
 
 /** The board as text: what the phone shows for /board, with what to answer next. */
 export function boardText(L: Ledger): string {
   const t = L.task
-  if (!t) return 'Доска: задания нет. Опишите задачу в чате, и Claude оформит задание.'
+  if (!t) return 'Доска: задания нет. Опишите задачу в чате, и Claude оформит задание. Или напишите «Свободный режим».'
+  if (t.mode === 'free') return freeText(L)
   const crit = criteriaOf(L)
   const qs = waitingQuestions(L)
   const steps = L.nodes.filter(n => n.kind === 'task' && !['superseded', 'dropped'].includes(n.status))
