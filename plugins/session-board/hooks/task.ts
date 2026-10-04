@@ -1,4 +1,5 @@
 import type { Authority, Ledger, LedgerNode, Phase, TaskSpec, Txt, Verdict } from '../types'
+import { codeLine, LEAN_LEVEL, LEAN_TAGS, TAG } from './lean'
 import { nextId, txt, type Op } from './ledger'
 
 // ---------- authority: what Claude may do alone, and what waits for the person ----------
@@ -152,6 +153,7 @@ export function renderTaskMd(L: Ledger): string {
     '',
     '## Вне рамок', '', ...(t.outOfScope.length ? t.outOfScope.map(s => `- ${s}`) : ['—']), '',
     `## Полномочия: ${a.label}`, '', `- Сам: ${a.alone.ru}`, `- Только с тобой: ${a.withYou.ru}`, '',
+    ...(t.code ? [`## Код: lean ${LEAN_LEVEL[t.code].label}`, '', LEAN_LEVEL[t.code].ru, ''] : []),
     '## Материалы', '', ...(t.materials.length ? t.materials.map(s => `- ${s}`) : ['—']), '',
   ]
   return out.join('\n')
@@ -160,7 +162,7 @@ export function renderTaskMd(L: Ledger): string {
 /** The message the Start button sends. */
 export function startMessage(t: TaskSpec): string {
   const a = AUTHORITY[t.authority]
-  return `Старт по заданию «${t.title.ru}». Работай сам. Полномочия: ${a.label} — сам: ${a.alone.ru}; только со мной: ${a.withYou.ru}. Зови меня только при блокере. Когда закончишь — проверь каждый критерий и сдай работу через submit.`
+  return `Старт по заданию «${t.title.ru}». Работай сам. Полномочия: ${a.label} — сам: ${a.alone.ru}; только со мной: ${a.withYou.ru}.${t.code ? ` ${codeLine(t.code)}` : ''} Зови меня только при блокере. Когда закончишь — проверь каждый критерий и сдай работу через submit.`
 }
 
 // ---------- the verdict ----------
@@ -179,10 +181,13 @@ export function verdictMessage(kind: VerdictKind, L: Ledger, v: Verdict): string
   }
   const no = Object.entries(v.marks).filter(([, m]) => m === 'no').map(([id]) => id)
   const commentedOk = Object.keys(v.comments).filter(id => v.marks[id] !== 'no')
-  const crit = no.filter(id => byId.get(id)?.kind === 'criterion')
-  const undo = no.filter(id => byId.get(id)?.kind === 'decision')
-  const wrong = no.filter(id => byId.get(id)?.kind === 'assumption')
-  const other = no.filter(id => !crit.includes(id) && !undo.includes(id) && !wrong.includes(id))
+  // lean's items: a mark asks for the thing Claude left out, not for a different path
+  const lean = no.filter(id => byId.get(id)?.tag)
+  const plain = no.filter(id => !lean.includes(id))
+  const crit = plain.filter(id => byId.get(id)?.kind === 'criterion')
+  const undo = plain.filter(id => byId.get(id)?.kind === 'decision')
+  const wrong = plain.filter(id => byId.get(id)?.kind === 'assumption')
+  const other = plain.filter(id => !crit.includes(id) && !undo.includes(id) && !wrong.includes(id))
   const round = L.task?.round ?? 1
   const head = kind === 'accept'
     ? `Приёмка, раунд ${round}: принято.`
@@ -194,6 +199,10 @@ export function verdictMessage(kind: VerdictKind, L: Ledger, v: Verdict): string
   if (undo.length) parts.push('Отмени эти решения и выбери другой путь:', ...undo.map(line))
   if (wrong.length) parts.push('Эти допущения неверны:', ...wrong.map(line))
   if (other.length) parts.push('Не так:', ...other.map(line))
+  for (const tag of LEAN_TAGS) {
+    const ids = lean.filter(id => byId.get(id)?.tag === tag)
+    if (ids.length) parts.push(TAG[tag].ask, ...ids.map(line))
+  }
   if (commentedOk.length) parts.push('Замечания:', ...commentedOk.map(line))
   if (v.general.length) parts.push('Общие замечания:', ...v.general.map(g => `- ${g}`))
   if (v.rules.length) parts.push('Новые правила проекта (уже записаны в .claude/tasks/RULES.md, соблюдай их дальше):', ...v.rules.map(r => `- ${r}`))

@@ -83,3 +83,12 @@ Collected on 2026-10-03, before any code was written. Star counts are from that 
 - Hooks: https://code.claude.com/docs/en/hooks ; output styles: https://code.claude.com/docs/en/output-styles ; skills: https://code.claude.com/docs/en/skills
 - Where plugins load (claude.ai, Cowork, Claude Code): https://claude.com/docs/plugins/platform-support
 - Mods need Claude Code 2.1.287 or later.
+
+## 7. Minimal-code rules (lean)
+
+Collected on 2026-10-04.
+
+- ponytail by Dietrich Gebert, MIT, 4.10.3: https://github.com/DietrichGebert/ponytail . The source of lean's ladder,
+  rules, levels, review tags and shortcut comments. What lean kept and dropped: [plugins/lean/README.md](../plugins/lean/README.md#where-it-comes-from).
+- How its Claude Code hooks work: https://deepwiki.com/DietrichGebert/ponytail/3-claude-code-plugin-and-hook-runtime
+- Plugin evals (two arms, graders, scaffolds): https://code.claude.com/docs/en/plugin-evals

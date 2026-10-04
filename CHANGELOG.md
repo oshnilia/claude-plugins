@@ -4,6 +4,21 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
 ## session-board
 
+### 0.7.0 — 2026-10-04
+
+- With the lean plugin, the board puts lean into each step. It learns about lean from the line lean's hook prints at
+  session start; without lean nothing changes.
+- Task screen: a code level (lite, full, ultra, off) next to authority. Start passes it to Claude; a change during the
+  work goes as a board note. «Срезанные углы в проекте» counts the project's `lean:` comments with `git grep` and asks
+  Claude for the list.
+- Hand-in: the submit tool asks Claude to review the task's diff for over-engineering first, record each finding and
+  change no code; `lean_check` carries the result in one line.
+- Acceptance: a section «Не построено» with what Claude did not build, its shortcuts and the findings. A mark becomes a
+  fix in the verdict: «добавить сейчас», «сделать полностью», «убрать». «Проверить на лишнее» asks for the review again.
+- The report and the phone's `/board` card list the same items. The Work screen counts them.
+- The note tool takes `tag` (skipped, shortcut, cut), an optional node field, and keeps a statement given only in
+  Russian.
+
 ### 0.6.0 — 2026-10-04
 
 - On a phone, a tablet or a browser (Remote Control) the board works in text. Mods draw only in the terminal and the
@@ -111,7 +126,32 @@ Security:
 - First version: plain English and plain Russian with measured strictness, diagram-first, visual explainer, format
   router, teach-back, the `plain-80` output style and four commands.
 
+## lean
+
+### 0.2.0 — 2026-10-04
+
+- With session-board 0.7.0: skipped things and shortcuts go to the board with a tag; before `submit` Claude reviews the
+  task's diff for over-engineering and records the findings without changing the code, also for parts you asked for by
+  name; a message `Код: lean <level>` from the board switches the level.
+- `/lean-review` records its findings on the board when the board is there. `/lean-debt` leaves markdown and JSON out.
+
+### 0.1.0 — 2026-10-04
+
+- New plugin, based on [ponytail](https://github.com/DietrichGebert/ponytail) 4.10.3 by Dietrich Gebert (MIT). Claude
+  writes the least code that solves the problem: is it needed at all, is it already in the codebase, the standard
+  library, the platform, an installed dependency, one line, and only then new code.
+- After the code, at most three lines `Skipped: <what>. Add when <trigger>.` in the user's language, in plain words.
+- With session-board, each skipped thing and each `lean:` shortcut is also a decision in the board's ledger.
+- Levels lite, full and ultra; the `level` option sets the level at session start, `/lean <level>` switches it for the
+  session. `/lean-review` finds what to cut in a diff or the whole repository; `/lean-debt` lists `lean:` shortcuts.
+- One `sh` hook, no Node.js and no files outside the plugin. Five eval cases with and without the plugin.
+
 ## Repository
+
+### 2026-10-04
+
+- The CI check for personal data checks each match on its own and allows the reserved example domains
+  (example.com, .org, .net) that eval cases use. CI also tests the lean hook.
 
 ### 2026-10-03 — ready to share
 

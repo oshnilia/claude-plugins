@@ -93,6 +93,8 @@ a.ev:hover{text-decoration:underline}
 .fork.dead .t{text-decoration:line-through;text-decoration-color:var(--dead)}
 .crit{border-top:1px solid var(--hair);padding:16px 0;display:grid;grid-template-columns:28px minmax(0,1fr);gap:2px 12px}
 .crit .t{font-weight:600}.crit p{margin:4px 0 0}
+#not-built .crit{grid-template-columns:92px minmax(0,1fr)}
+.tag{font:600 12px/1.6 var(--font);color:var(--muted);text-transform:uppercase;letter-spacing:.04em;margin-top:2px}
 details.proof summary{cursor:pointer;color:var(--muted);font-size:15px;margin-top:6px}
 .file{border-top:1px solid var(--hair)}
 .file summary{display:grid;grid-template-columns:minmax(0,1fr) 120px 90px;gap:12px;align-items:center;padding:10px 0;cursor:pointer;list-style:none}

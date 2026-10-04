@@ -66,6 +66,7 @@ function fields(raw: Record<string, unknown>): Partial<LedgerNode> {
   if (typeof raw.blocking === 'boolean') out.blocking = raw.blocking
   if (raw.ask === 'user' || raw.ask === 'agent' || raw.ask === 'external') out.ask = raw.ask
   if (Array.isArray(raw.options)) out.options = raw.options.filter((o): o is string => typeof o === 'string' && !!o.trim()).map(o => o.trim().slice(0, 40)).slice(0, 3)
+  if (raw.tag === 'skipped' || raw.tag === 'shortcut' || raw.tag === 'cut') out.tag = raw.tag
   return out
 }
 
@@ -207,6 +208,7 @@ export function renderBrief(ledger: Ledger): string {
     if (t.goal.en) L.push(`TASK GOAL: ${t.goal.en}`)
     if (t.result.en) L.push(`HAND IN: ${t.result.en}`)
     L.push(`AUTHORITY: ${t.authority}`)
+    if (t.code) L.push(`CODE: lean ${t.code}`)
     if (t.outOfScope.length) L.push(`OUT OF SCOPE: ${t.outOfScope.join(' | ')}`)
   }
   const crit = ledger.nodes.filter(n => n.kind === 'criterion' && n.status !== 'superseded')
@@ -245,7 +247,7 @@ export function renderBrief(ledger: Ledger): string {
 function nodeLine(n: LedgerNode, lang: 'en' | 'ru'): string {
   const s = n.statement ? ` - ${n.statement[lang]}` : ''
   const ev = n.evidence.length ? ` _(${n.evidence.map(e => e.ref).join('; ')})_` : ''
-  return `**${n.id}** [${n.kind}, ${n.status}] ${n.title[lang]}${s}${ev}`
+  return `**${n.id}** [${n.kind}${n.tag ? `/${n.tag}` : ''}, ${n.status}] ${n.title[lang]}${s}${ev}`
 }
 
 export function renderMarkdown(ledger: Ledger, lang: 'en' | 'ru'): string {

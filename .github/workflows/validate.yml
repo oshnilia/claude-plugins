@@ -25,11 +25,15 @@ jobs:
         run: "! grep -nE '(\\(|,|\\s)h\\s*=>|\\b(const|let|var) h\\b' plugins/session-board/hooks/*.tsx"
       - name: No personal paths or email addresses in shipped files
         run: |
-          if grep -rnE '/Users/[A-Za-z0-9_.-]+/|/home/[A-Za-z0-9_.-]+/|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}' plugins .claude-plugin \
-            | grep -vE 'noreply@anthropic\.com|users\.noreply\.github\.com'; then
+          # -o checks each match on its own, so an allowed address does not hide another one on the same line.
+          # example.com/.org/.net are reserved for examples (RFC 2606) and appear in eval cases.
+          if grep -rnoE '/Users/[A-Za-z0-9_.-]+/|/home/[A-Za-z0-9_.-]+/|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}' plugins .claude-plugin \
+            | grep -vE 'noreply@anthropic\.com|users\.noreply\.github\.com|@example\.(com|org|net)$'; then
             echo "Remove the personal data above before merging."; exit 1
           fi
       - name: Test session-board mod
         run: claude plugin test plugins/session-board
+      - name: Test lean hook
+        run: sh plugins/lean/tests/hook.sh
       - name: Plain-style scorer self-test
         run: python3 plugins/legible/skills/plain-english/scripts/ste_score.py --self-test && python3 plugins/legible/skills/plain-russian/scripts/ru_score.py --self-test
