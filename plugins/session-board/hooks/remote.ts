@@ -1,0 +1,64 @@
+// The board for a phone or a browser over Remote Control. Mods draw only in the terminal and the Desktop app
+// (code.claude.com/docs/en/plugins/mods/overview, "Where mods run"), so there the board speaks text: /board prints a
+// text card, the next step comes as a question dialog (Remote Control forwards those), and short words in the chat
+// press the board's buttons.
+import type { Ledger, Phase } from '../types'
+import { criteriaOf, verdictLine } from './task'
+import { waitingQuestions } from './views'
+
+export type ChatCommand =
+  | { kind: 'start' }
+  | { kind: 'accept' }
+  | { kind: 'return' | 'fixes'; remark: string }
+
+const START = /^\s*(старт|start|начинай|поехали)\s*[.!]*\s*$/i
+const ACCEPT = /^\s*(принять|принимаю|принято|accept)(\s+работу)?\s*[.!]*\s*$/i
+const FIXES = /^\s*(принять\s+с\s+правками|с\s+правками)\s*[:—–-]\s*([\s\S]+)$/i
+const RETURN = /^\s*(вернуть|верни|на\s+доработку|return)\s*[:—–-]\s*([\s\S]+)$/i
+
+/** A short word from the person that presses a board button, only in the phase where that button exists. */
+export function parseChatCommand(text: string, phase: Phase | undefined): ChatCommand | null {
+  if (phase === 'intake' && START.test(text)) return { kind: 'start' }
+  if (phase !== 'review') return null
+  if (ACCEPT.test(text)) return { kind: 'accept' }
+  const f = FIXES.exec(text)
+  if (f) return { kind: 'fixes', remark: f[2]!.trim() }
+  const r = RETURN.exec(text)
+  if (r) return { kind: 'return', remark: r[2]!.trim() }
+  return null
+}
+
+const mark = (status: string) => (status === 'proven' ? '✓' : status === 'failed' ? '✗' : '○')
+
+/** The board as text: what the phone shows for /board, with what to answer next. */
+export function boardText(L: Ledger): string {
+  const t = L.task
+  if (!t) return 'Доска: задания нет. Опишите задачу в чате, и Claude оформит задание.'
+  const crit = criteriaOf(L)
+  const qs = waitingQuestions(L)
+  const steps = L.nodes.filter(n => n.kind === 'task' && !['superseded', 'dropped'].includes(n.status))
+  const doing = steps.find(n => n.status === 'doing')
+  const sub = t.submitted
+  const out: string[] = [`**${t.title.ru}**`]
+  if (t.phase === 'intake') out.push('Задание ждёт «Старт».', '', t.goal.ru)
+  else if (t.phase === 'work') out.push(`В работе${steps.length ? ` · шагов ${steps.filter(n => n.status === 'done').length} из ${steps.length}` : ''}${doing ? ` · сейчас: ${doing.title.ru}` : ''}`)
+  else if (t.phase === 'review') out.push(`Работа сдана · ${verdictLine(crit)}`, '', sub?.summary.ru ?? '')
+  else out.push('Принято.')
+  if (qs.length) {
+    out.push('', '**Нужен ты**')
+    for (const n of qs) out.push(`- ${n.title.ru}`)
+  }
+  if (t.phase === 'review' && sub?.forYou?.length) {
+    out.push('', '**Нужно от тебя**')
+    for (const x of sub.forYou) out.push(`- ${x}`)
+  }
+  if (crit.length) {
+    out.push('', `**Готово, когда** · ${crit.filter(k => k.status === 'proven').length} из ${crit.length}`)
+    for (const k of crit) out.push(`- ${mark(k.status)} ${sub?.results?.[k.id] ?? k.title.ru}`)
+  }
+  const hint = t.phase === 'intake' ? 'Ответьте «Старт», чтобы начать, или напишите, что поправить.'
+    : t.phase === 'review' ? 'Ответьте «Принять» или «Вернуть: что поправить».'
+      : qs.length ? 'Ответьте на вопрос обычным сообщением.' : ''
+  if (hint) out.push('', hint)
+  return out.join('\n')
+}
