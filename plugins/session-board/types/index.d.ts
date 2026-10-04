@@ -30,7 +30,14 @@ export type LedgerNode = {
   ask?: 'user' | 'agent' | 'external'
   // quick answers the board shows as buttons
   options?: string[]
+  /** an item of the lean plugin: a thing Claude did not build, a `lean:` shortcut, an over-engineering finding */
+  tag?: LeanTag
 }
+
+export type LeanTag = 'skipped' | 'shortcut' | 'cut'
+
+/** The lean plugin's level: how hard Claude cuts code. */
+export type LeanLevel = 'lite' | 'full' | 'ultra' | 'off'
 
 export type Brief = {
   question: Txt
@@ -70,6 +77,8 @@ export type Submission = {
   results?: Record<string, string>
   /** what only the person can do now, in plain Russian */
   forYou?: string[]
+  /** with lean: the result of Claude's over-engineering self-check of the task's diff, one plain Russian line */
+  leanCheck?: string
   verify: string[]
   notDone: string[]
   next: string[]
@@ -83,6 +92,8 @@ export type TaskSpec = {
   outOfScope: string[]
   materials: string[]
   authority: Authority
+  /** the lean level the person picked for this task; unset: lean's own setting */
+  code?: LeanLevel
   /** absolute path of the task folder; empty until the task has a title */
   dir: string
   created: string
@@ -160,6 +171,10 @@ declare module 'claude-code' {
       sent: SentAction[]
       home: { sid: string; dir: string }
       ladder: boolean
+      /** the lean plugin in this session, from its session-start line; null: not installed or off */
+      lean: { level: LeanLevel } | null
+      /** `lean:` shortcut comments in the project, from git grep; null: not counted */
+      debt: { markers: number; files: number } | null
     }
   }
 }

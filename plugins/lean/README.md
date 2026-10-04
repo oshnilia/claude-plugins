@@ -33,10 +33,18 @@ before add).
 
 ### With session-board
 
-When the session has session-board's `note` tool, Claude also records each skipped thing and each `lean:` shortcut as
-a decision in the board's ledger (`Skipped: …` / `Add when …`, in English and Russian). The decisions show on the
-Acceptance screen and in the report, so you see what was not built before you accept the work. lean does not change
-session-board; it only asks Claude to use the tool that session-board gives.
+With [`session-board`](../session-board) 0.7.0 or later, lean is part of each step of a task:
+
+| Step | What happens |
+|---|---|
+| Brief | The board shows a code level (lite / full / ultra / off) next to authority. Start passes it to Claude as `Код: lean <level>`. |
+| Work | Each skipped thing and each `lean:` shortcut goes to the board's ledger as a decision with a tag (`skipped`, `shortcut`), in English and Russian. |
+| Hand-in | Before `submit`, Claude reviews the task's diff for over-engineering, as `/lean-review` does, and records each finding (tag `cut`) without changing the code. One line, «Самопроверка на лишнее», says what it found. |
+| Acceptance | «Не построено» lists the skipped things, the shortcuts and the findings. You mark what to change: «добавить сейчас», «сделать полностью», «убрать». The marks go to Claude with your verdict. «Проверить на лишнее» asks for the review again. |
+| Report, project | The report has a block on what was not built and when to add it. The Task screen counts the project's `lean:` shortcuts and asks for the `/lean-debt` list. |
+
+lean does not need session-board and does not change it: the rules ask Claude to use the tools the board gives, and
+the board reads lean's session-start line. Details: [docs/board-logic.md](../../docs/board-logic.md#lean-in-the-flow).
 
 ## Install
 
@@ -55,7 +63,7 @@ claude plugin install lean@oshn
 
 lean is text plus one hook. The hook (`hooks/rules.sh`, 11 lines of `sh`) prints the rules file at session start. It
 reads no project files, writes nothing and makes no network calls. Only the `level` option reaches it, and a value
-other than `lite`, `full`, `ultra` or `off` falls back to `full`. The rules add about 1,200 tokens to each session.
+other than `lite`, `full`, `ultra` or `off` falls back to `full`. The rules add about 1,400 tokens to each session.
 
 ## Limits
 
@@ -63,6 +71,8 @@ other than `lite`, `full`, `ultra` or `off` falls back to `full`. The rules add 
 - **Windows** needs Git Bash for the hook (Claude Code uses it for hooks when it is installed).
 - **Board notes** depend on the model. In our runs, Opus 5.5 recorded each skipped thing in a single turn; Sonnet did
   so only in the board's work phase, after Start.
+- With `level` off at session start the hook prints nothing, so session-board shows no lean parts in that session,
+  even after `/lean full`.
 - After compaction the hook prints the level from the settings again. A level you switched earlier in the session
   stays in force only as far as the compacted summary keeps it.
 
@@ -86,6 +96,8 @@ coding agents. lean keeps the idea and cuts the rest.
 
 ## Measured (v0.1.0, 2026-10-04, Claude Code 2.1.288, Opus 5.5, 5 runs per arm, judge: sonnet)
 
+0.2.0 changes only the session-board part of the rules, which these runs do not load, so the table stands.
+
 | Case | Score with lean | Without | Δ | Code lines with | Without |
 |---|---|---|---|---|---|
 | email-ru (Russian request) | 0.97 | 0.50 | +0.47 | 5.0 | 25.4 |
@@ -100,7 +112,8 @@ coding agents. lean keeps the idea and cuts the rest.
 - **Shorter answers:** 105 words on average, against 153.
 - **Skipped lines:** 5 of 5 runs in Russian and 5 of 5 in English wrote them; the baseline never did. One Russian run
   of 5 was longer than the 8 lines the grader allows.
-- **Costs more:** $0.111 per run against $0.091 (+22%). The rules add about 1,200 tokens, and the checks add output.
+- **Costs more:** $0.111 per run against $0.091 (+22%). The rules add about 1,200 tokens (1,400 in 0.2.0), and the
+  checks add output.
 - **Guards:** on the date field and the bug fix, Claude without lean already took the native `<input type="date">` and
   fixed the shared function. lean did not make them worse.
 - In these runs session-board was not loaded. All 50 runs ended without an error, and no lean answer mentioned the

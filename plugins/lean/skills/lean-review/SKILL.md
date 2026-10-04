@@ -45,6 +45,10 @@ End with `net: -<N> lines possible` (in an audit also `-<M> dependencies`). If t
 
 Tags and code stay as they are; write the rest of each line in the user's language, in plain words.
 
+With session-board (the `mcp__session-board__note` tool, maybe deferred), also record each finding as one note:
+`kind`: `finding`, `tag`: `cut`, `title`/`title_ru`: what to cut, `statement_ru`: what replaces it, `evidence`: file
+and line. The user marks what to cut at Acceptance.
+
 ## Limits
 
 Only complexity. Bugs, security holes and speed go to a normal review. One small test or `assert` check is the lean

@@ -29,6 +29,11 @@ Source of types: [`plugins/session-board/types/index.d.ts`](../plugins/session-b
 Any node may be `stale`: the person marked it outdated on the board; the cartographer rewrites or closes it.
 A decision the person rejects at review becomes `disputed`.
 
+An item of the [lean](../plugins/lean) plugin carries `tag`: `skipped` (a decision: a thing Claude chose not to build,
+with "add when" in the statement), `shortcut` (a decision: a `lean:` comment in the code, with its limit) or `cut` (a
+finding: over-engineering the self-check found). The field is optional, so ledgers without it stay valid. The board
+shows tagged items under «Не построено», not among Claude's own decisions or the report's forks.
+
 The ledger also holds `task` (the brief, phase, round, authority, folder; see [board-logic.md](board-logic.md)).
 
 Every node: `id` (stable, never reused), `kind`, `parent?`, `title {en, ru}` (≤10 words), `statement? {en, ru}`
@@ -58,6 +63,7 @@ TASK: … [work] folder=/…/.claude/tasks/2026-10-03-<slug>
 TASK GOAL: …
 HAND IN: …
 AUTHORITY: normal
+CODE: lean ultra            (only when the person picked a lean level for the task)
 DONE WHEN: K1 … [proven] | K2 … [todo]
 GOAL G1: … [active]
 QUESTION: …

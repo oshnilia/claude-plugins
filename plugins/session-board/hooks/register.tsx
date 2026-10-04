@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { Authority, BoardStatus, DiffView, Explain, Ledger, LedgerNode, LiveEvent, OpenTask, QA, SentAction, Submission, TaskSpec, TurnCard } from '../types'
+import type { Authority, BoardStatus, DiffView, Explain, LeanLevel, Ledger, LedgerNode, LiveEvent, OpenTask, QA, SentAction, Submission, TaskSpec, TurnCard } from '../types'
 import { askPrompt, cartographerPrompt, compactRules, parseReply, type TurnDigest } from './cartographer'
 import { deterministicOps, FILE_TOOLS, liveEvent, targetOf, toolLabel } from './extract'
 import { applyOps, cleanBrief, emptyLedger, parseOp, renderBrief, renderMarkdown, txt, upsertTurn, type Op } from './ledger'
@@ -11,6 +11,7 @@ import {
   VERDICT_LABEL, verdictLine, verdictMessage, type VerdictKind,
 } from './task'
 import { LADDER_MIN_WORDS, proseWords, RUNGS } from './ladder'
+import { DEBT_GREP, LEAN_LEVEL, leanLineLevel, parseDebt } from './lean'
 import { boardText, parseChatCommand } from './remote'
 import { Band, Board, resolveView, waitingQuestions, type Actions, type AddKind, type Data } from './views'
 
@@ -39,6 +40,9 @@ const sent = atom({ plugin: 'session-board', key: 'sent' } as const, [] as SentA
 const home = atom({ plugin: 'session-board', key: 'home' } as const, { sid: '', dir: '' })
 // the format ladder shows under the last answer when it was long; any new message takes it down
 const ladder = atom({ plugin: 'session-board', key: 'ladder' } as const, false)
+// the lean plugin, seen in the line its hook prints at session start; and the project's `lean:` shortcuts
+const lean = atom({ plugin: 'session-board', key: 'lean' } as const, null as { level: LeanLevel } | null)
+const debt = atom({ plugin: 'session-board', key: 'debt' } as const, null as { markers: number; files: number } | null)
 
 type Current = { n: number; ask: string; tools: Record<string, number>; files: Set<string>; paths: Set<string>; errors: string[]; ops: Op[]; touched: string[] }
 
@@ -51,6 +55,8 @@ let root = ''
 let sessionId = ''
 let projectRules = ''
 let pointerFor = ''
+// looking for lean's line in the conversation: at session start and with the first message, never on every prompt
+let leanLooks = 0
 
 // prompts the person sent: the composer, the phone bridge, the desktop app (an SDK host); never a plugin or a peer
 const USER_ORIGINS = new Set<string | undefined>(['composer', 'bridge', 'sdk', 'unclassified'])
@@ -467,6 +473,43 @@ async function setAuthority($: EngineInterface, level: Authority) {
   if (t.phase === 'work' || t.phase === 'review') await addNote($, `Полномочия теперь «${a.label}»: сам — ${a.alone.ru}; только со мной — ${a.withYou.ru}.`)
 }
 
+/** The lean level of the task. During the work the change reaches Claude with the next message. */
+async function setCode($: EngineInterface, level: LeanLevel) {
+  const t = (await read($, ledger)).task
+  if (!t || t.phase === 'accepted' || t.code === level) return
+  await setTask($, x => ({ ...x, code: level }))
+  if (t.phase === 'work' || t.phase === 'review') await addNote($, `Код теперь lean ${level}: ${LEAN_LEVEL[level].ru}.`)
+}
+
+/**
+ * A resumed session gets no new line from lean's hook: look for it in the conversation so far. Runs at session start
+ * and with the person's first message, while the board has not seen lean yet.
+ */
+async function findLean($: EngineInterface) {
+  if (leanLooks >= 2 || (await read($, lean))) return
+  leanLooks++
+  const msgs = await $.session.messages({ as: 'api' })
+  if (!Array.isArray(msgs)) return
+  for (const m of msgs) {
+    if (m.role !== 'user') continue
+    const level = leanLineLevel(m.content.map(b => (b.type === 'text' && typeof b.text === 'string' ? b.text : '')).join('\n'))
+    if (level) {
+      await update($, lean, () => ({ level }))
+      await countDebt($)
+      return
+    }
+  }
+}
+
+/** Count the project's `lean:` shortcut comments with git grep (read only). Nothing without lean. */
+async function countDebt($: EngineInterface) {
+  if (!(await read($, lean))) return
+  const dir = root || (await $.session.cwd())
+  const r = await $.process.run(['git', '-C', dir, ...DEBT_GREP])
+  // 0: found, 1: none; anything else: not a git work tree, so no count
+  await update($, debt, () => (r.exitCode === 0 || r.exitCode === 1 ? parseDebt(r.stdout) : null))
+}
+
 const ADD_NOTE: Record<AddKind, string> = { rule: 'Новое правило', ban: 'Новый запрет', fact: 'Факт от меня', criterion: 'Новый критерий готовности' }
 
 async function addItem($: EngineInterface, kind: AddKind, text: string) {
@@ -582,6 +625,7 @@ const SUBMIT_TOOL_DESCRIPTION =
   'the result first, one thought per sentence, up to 15 words, verbs instead of nouns, no ledger ids (K1, D20, F27), no file paths, no run ids, no tool names, no English terms where a Russian word exists. ' +
   'Good result_ru: "Да: проверки на GitHub проходят, оба плагина устанавливаются." Bad: "CI run 37117211238: success on bb241e7". ' +
   'Put ids, commands, paths, run ids and numbers into evidence: the board hides evidence under a toggle. ' +
+  'If the session has the lean rules ("lean is on"), first check your own work: review the task\'s diff for over-engineering as lean-review does and record each finding with the note tool (kind finding, tag cut: what to remove, what replaces it, file and line; also for parts the person asked for by name, saying so); make sure each new `lean:` comment in the diff has a note with tag shortcut. Only record: do not change the code for them, the person picks what to cut. Put the result in lean_check, one plain Russian line («Лишнего не нашёл», «Нашёл два места, они в списке»). ' +
   'The board builds an HTML report and shows the person the Acceptance screen. After the call, end your turn and wait for one verdict.'
 
 // ---------- board actions: the same for every surface ----------
@@ -641,6 +685,7 @@ function boardActions($: EngineInterface): Actions {
       if (t) later(() => sendOnce($, 'fix', `Поправь задание: ${t}. Обнови бриф через тул task и жди «Старт».`))
     },
     setAuthority: level => later(() => setAuthority($, level)),
+    setCode: level => later(() => setCode($, level)),
     start: () => later(() => startTask($)),
     addItem: (kind, text) => later(() => addItem($, kind, text)),
     stale: id => later(() => markStale($, id)),
@@ -736,6 +781,7 @@ export const register: Register = (on, options) => {
   busy = false
   pending = null
   pointerFor = ''
+  leanLooks = 0
 
   // ---------- session ----------
 
@@ -791,6 +837,8 @@ export const register: Register = (on, options) => {
     // an old ledger with goals gets its task folder now
     await ensureTask($)
     await refreshOpenTasks($)
+    await findLean($).catch(() => undefined)
+    await countDebt($)
     // a reload drops pending timers: catch up the last turn if it never reached the map
     const L0 = await read($, ledger)
     const behind = catchUpDigest(L0)
@@ -816,7 +864,8 @@ export const register: Register = (on, options) => {
     await $.tool.register({
       name: 'note',
       description:
-        'Record one item in the session ledger at once: a decision you took yourself (it goes to the acceptance list), an assumption, a finding with evidence, an open question for the user, a constraint the user stated, or a dead end. Give an existing id to update that item instead (for example mark a step done or a criterion proven with evidence).',
+        'Record one item in the session ledger at once: a decision you took yourself (it goes to the acceptance list), an assumption, a finding with evidence, an open question for the user, a constraint the user stated, or a dead end. Give an existing id to update that item instead (for example mark a step done or a criterion proven with evidence). ' +
+        'With the lean rules, tag what you did not build (decision, tag skipped), a `lean:` shortcut (decision, tag shortcut) and an over-engineering finding (finding, tag cut): the person sees them under «Не построено».',
       inputSchema: {
         type: 'object',
         required: ['title'],
@@ -830,6 +879,7 @@ export const register: Register = (on, options) => {
           parent: { type: 'string', description: 'Parent node id, if any' },
           status: { type: 'string', description: 'For example done, refuted, accepted, proven' },
           evidence: { type: 'array', items: { type: 'string' }, description: 'file:line, command, test or URL' },
+          tag: { type: 'string', enum: ['skipped', 'shortcut', 'cut'], description: 'lean items only: skipped (not built), shortcut (a lean: comment), cut (over-engineering to remove)' },
         },
       },
     })
@@ -890,6 +940,7 @@ export const register: Register = (on, options) => {
           verify: { type: 'array', items: { type: 'string' } },
           not_done: { type: 'array', items: { type: 'string' } },
           next: { type: 'array', items: { type: 'string' } },
+          lean_check: { type: 'string', description: 'With the lean rules only: the result of your over-engineering self-check of the task\'s diff, one plain Russian line' },
         },
       },
     })
@@ -952,6 +1003,7 @@ export const register: Register = (on, options) => {
       }
     }
     if (fromBoard) await update($, sent, list => list.map(x => (x.text === e.text ? { ...x, started: true } : x)))
+    if (fromPerson) await findLean($).catch(() => undefined)
     // The person wrote in the chat: their message probably answers the open questions. Take the cards down now;
     // the cartographer marks each one answered, or opens it again when the message did not answer it.
     if (fromPerson && current.ask && !word) {
@@ -1026,11 +1078,27 @@ export const register: Register = (on, options) => {
     }
     const L = await update($, ledger, prev => upsertTurn({ ...prev, updated: card.at }, card))
     await persist($, L, [])
+    if (c.paths.size) await countDebt($)
     if (cfg.updateMode === 'every-turn' && !e.isAborted && (toolCount >= cfg.minTools || !L.brief)) {
       const latest: TurnDigest = { n: c.n, ask: c.ask, answer: e.answer, tools: c.tools, files: [...c.files], errors: c.errors }
       schedule($, L.nodes.length ? catchUpDigest(L, latest) ?? latest : 'bootstrap')
     }
     return r
+  })
+
+  // ---------- the lean plugin: its hook prints "lean is on. Level: …" at session start ----------
+
+  on('session.append', async ($, e, next) => {
+    // the person's prompt, the model and tool output may quote the line; only injected context counts
+    if (!e.agentId && e.door !== 'prompt' && e.door !== 'tool-result' && e.message.type !== 'assistant') {
+      const text = e.message.content.map(b => ('text' in b && typeof b.text === 'string' ? b.text : '')).join('\n')
+      const level = leanLineLevel(text)
+      if (level) {
+        await update($, lean, () => ({ level }))
+        await countDebt($).catch(() => undefined)
+      }
+    }
+    return next(e)
   })
 
   // ---------- compaction: the files keep the ledger; the summary keeps only what the files lack ----------
@@ -1091,8 +1159,9 @@ export const register: Register = (on, options) => {
         op: 'update', id, status: s('status'), parent: s('parent'),
         // an English-only update keeps the Russian text: the board must not turn English
         ...(s('title') ? { title: { en: s('title'), ru: s('title_ru') ?? n.title.ru } } : {}),
-        ...(s('statement') ? { statement: { en: s('statement'), ru: s('statement_ru') ?? n.statement?.ru ?? s('statement') } } : {}),
+        ...(s('statement') || s('statement_ru') ? { statement: { en: s('statement') ?? s('statement_ru'), ru: s('statement_ru') ?? n.statement?.ru ?? s('statement') } } : {}),
         ...(evidence ? { evidence: [...n.evidence, ...evidence].slice(0, 8) } : {}),
+        tag: i.tag,
       })
       if (!op) return reply(`Not updated: ${id}.`)
       await commit($, [op], turn, 'claude')
@@ -1102,9 +1171,11 @@ export const register: Register = (on, options) => {
     const op = parseOp({
       op: 'add', kind: i.kind, parent: s('parent'), status: s('status'),
       title: { en: s('title') ?? '', ru: s('title_ru') ?? s('title') ?? '' },
-      ...(s('statement') ? { statement: { en: s('statement'), ru: s('statement_ru') ?? s('statement') } } : {}),
+      // a Russian-only statement still shows: the board is read in Russian
+      ...(s('statement') || s('statement_ru') ? { statement: { en: s('statement') ?? s('statement_ru'), ru: s('statement_ru') ?? s('statement') } } : {}),
       evidence: evidence ?? [],
       ...(i.kind === 'decision' ? { by: 'claude' } : {}),
+      tag: i.tag,
     })
     if (!op) return reply('Not recorded: kind and title are required.')
     const [added] = await commit($, [op], turn, 'claude')
@@ -1188,7 +1259,8 @@ export const register: Register = (on, options) => {
     if (closing) for (const g of L.nodes.filter(n => n.kind === 'goal' && n.status !== 'done' && !gone(n))) ops.push({ op: 'update', id: g.id, status: 'done' })
     if (ops.length) await commit($, ops, current?.n ?? L.turns.at(-1)?.n ?? 1, 'claude')
     const at = await iso($)
-    const sub: Submission = { at, round: t.round, summary, results, forYou: strs(raw.for_you), verify: strs(raw.verify), notDone: strs(raw.not_done), next: strs(raw.next) }
+    const leanCheck = typeof raw.lean_check === 'string' && raw.lean_check.trim() ? raw.lean_check.trim().slice(0, 300) : undefined
+    const sub: Submission = { at, round: t.round, summary, results, forYou: strs(raw.for_you), verify: strs(raw.verify), notDone: strs(raw.not_done), next: strs(raw.next), ...(leanCheck ? { leanCheck } : {}) }
     await setTask($, x => ({ ...x, submitted: sub, phase: closing ? 'accepted' : 'review', acceptOnSubmit: false }))
     await update($, verdict, () => emptyVerdict())
     const path = await buildReport($)
@@ -1231,6 +1303,8 @@ export const register: Register = (on, options) => {
       editing: await read($, editing),
       openTasks: v === 'task' && !L.task ? await read($, openTasks) : [],
       policy: await read($, policy),
+      lean: await read($, lean),
+      debt: v === 'task' ? await read($, debt) : null,
       sent: (await read($, sent)).map(x => x.key),
       width: Math.max(24, e.props.bodyColumns - 1),
       ...(e.surface === 'desktop' ? { svg: $.ui.resolve(e).Svg } : {}),

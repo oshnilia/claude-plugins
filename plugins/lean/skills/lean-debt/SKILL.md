@@ -13,7 +13,7 @@ them into one list.
 Search the repository for the comment marker and skip `.git`, `node_modules` and build output:
 
 ```
-grep -rnE --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build '(#|//|/[*]|--) ?lean:' .
+grep -rnE --exclude-dir=.git --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=build --exclude='*.md' --exclude='*.json*' '(#|//|/[*]|--) ?lean:' .
 ```
 
 The comment prefix keeps text that only mentions the convention out of the list. Add other prefixes if the stack

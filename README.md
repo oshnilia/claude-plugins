@@ -8,7 +8,7 @@ a session into a task with a brief at the start and an acceptance at the end.
 |---|---|---|
 | [`session-board`](plugins/session-board) | A mod for people who run many sessions at once. Two touches per task: a brief with criteria and authority at the start, an Acceptance screen and an interactive HTML report at the end; Claude works alone in between. The task folder keeps the ledger, so compaction loses nothing. Board texts are in Russian. | Claude Code desktop (Code tab) and terminal |
 | [`legible`](plugins/legible) | Karpathy's format ladder: ASD-STE100 text and plain Russian at a measurable strictness, diagram-first answers, HTML explainers, animated step players, teach-back checks | Claude Code; the skills also work on claude.ai |
-| [`lean`](plugins/lean) | Claude writes the least code that solves the problem: reuse, standard library and platform before new code. It says in plain words what it skipped and when to add it; with session-board, each skipped thing is a decision you accept. Based on [ponytail](https://github.com/DietrichGebert/ponytail). | Claude Code |
+| [`lean`](plugins/lean) | Claude writes the least code that solves the problem: reuse, standard library and platform before new code. It says in plain words what it skipped and when to add it. With session-board it is part of each step: a code level in the brief, a self-check before hand-in, «Не построено» at Acceptance. Based on [ponytail](https://github.com/DietrichGebert/ponytail). | Claude Code |
 
 ## Install
 
@@ -93,8 +93,8 @@ and never claims compliance. License: [MIT](LICENSE).
 - **legible** — лестница форматов Карпаты: текст в ASD-STE100 и простой технический русский с измеримой строгостью,
   схема, HTML-страница, пошаговая анимация, проверка понимания. Подробно — в [README legible](plugins/legible/README.md).
 - **lean** — Claude пишет минимум кода: сначала то, что уже есть в проекте, стандартная библиотека и возможности
-  платформы, потом своё. После кода — строки «Пропущено: … Добавить, когда …». С доской каждое такое решение
-  попадает на приёмку. Основан на [ponytail](https://github.com/DietrichGebert/ponytail) Dietrich Gebert (MIT).
+  платформы, потом своё. После кода — строки «Пропущено: … Добавить, когда …». С доской lean входит в каждый шаг:
+  уровень кода в задании, самопроверка на лишнее перед сдачей, раздел «Не построено» на приёмке. Основан на [ponytail](https://github.com/DietrichGebert/ponytail) Dietrich Gebert (MIT).
   Подробно — в [README lean](plugins/lean/README.md).
 
 ### Установка

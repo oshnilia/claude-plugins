@@ -1,4 +1,5 @@
 import type { Ledger, LedgerNode } from '../types'
+import { leanItems, TAG } from './lean'
 import { REPORT_CSS, REPORT_JS } from './report-client'
 import { AUTHORITY, criteriaOf, proofOf, verdictLine } from './task'
 
@@ -45,7 +46,7 @@ export function renderReport(L: Ledger, diff: ReportDiff, generated: string): st
   const sub = t?.submitted
   const live = L.nodes.filter(n => !gone(n))
   const goals = live.filter(n => n.kind === 'goal' && !n.parent)
-  const forks = live.filter(n => n.kind === 'decision' || (n.kind === 'hypothesis' && n.status === 'refuted')).sort((a, b) => a.turn - b.turn)
+  const forks = live.filter(n => (n.kind === 'decision' && !n.tag) || (n.kind === 'hypothesis' && n.status === 'refuted')).sort((a, b) => a.turn - b.turn)
   const risks = live.filter(n => n.kind === 'risk' && !['lifted', 'done'].includes(n.status))
   const rules = live.filter(n => n.kind === 'constraint' && n.status !== 'lifted')
   const colors = ['#1f6feb', '#0ca4c4', '#d6336c', '#f59f00', '#7048e8', '#2b8a3e']
@@ -104,6 +105,13 @@ export function renderReport(L: Ledger, diff: ReportDiff, generated: string): st
     return `<details class="file"><summary><code>${esc(f.path)}${f.isNew ? ' (новый)' : ''}</code><span class="bar"><i class="a" style="width:${a.toFixed(1)}%"></i><i class="d" style="width:${d.toFixed(1)}%"></i></span><span class="nums">+${f.add} −${f.del}</span></summary><pre class="diff">${diffHtml(f.patch)}</pre></details>`
   }).join('')
 
+  // lean's items: what Claude chose not to build, its shortcuts, the over-engineering it found
+  const notBuilt = leanItems(L).map(n => {
+    const asked = n.status === 'disputed' ? ' · попросили сделать' : ''
+    const where = proofOf(n)
+    return `<div class="crit"><span class="tag">${esc(TAG[n.tag!].label)}</span><div><span class="t">${esc(n.title.ru)}</span>${n.statement ? `<p>${esc(n.statement.ru)}${esc(asked)}</p>` : asked ? `<p>${esc(asked.slice(3))}</p>` : ''}${where.length ? `<div class="ev">${esc(where.join(' · '))}</div>` : ''}</div></div>`
+  }).join('')
+
   const list = (items: string[], empty: string) => (items.length ? `<ul class="plain">${items.map(i => `<li>${esc(i)}</li>`).join('')}</ul>` : `<p class="muted">${esc(empty)}</p>`)
 
   const verify = sub?.verify.length
@@ -143,6 +151,8 @@ export function renderReport(L: Ledger, diff: ReportDiff, generated: string): st
 ${forks.length ? `<section id="forks"><h2>Развилки и тупики</h2><p class="hint">Где выбирали путь и что не сработало, по порядку. Нажми, чтобы найти на карте.</p><div class="forks">${forkRows}</div></section>` : ''}
 
 <section id="checked"><h2>Что проверено</h2>${critRows || '<p class="muted">В задании не было пунктов для проверки.</p>'}</section>
+
+${notBuilt || sub?.leanCheck ? `<section id="not-built"><h2>Что не построено и когда добавить</h2><p class="hint">Что Claude сознательно не сделал, где срезал угол с известным пределом и что проверка нашла лишним.</p>${sub?.leanCheck ? `<p>Самопроверка на лишнее: ${esc(sub.leanCheck)}</p>` : ''}${notBuilt}</section>` : ''}
 
 <section id="changes"><h2>Что изменилось</h2>${fileRows ? `<p class="hint">Файлы с начала работы. Нажми на файл, чтобы увидеть изменения.</p>${fileRows}` : '<p class="muted">Файлы не менялись.</p>'}</section>
 

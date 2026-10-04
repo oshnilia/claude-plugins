@@ -20,7 +20,8 @@ no review and costs nothing to keep.
 
 `/lean lite|full|ultra` switches the level for the rest of this session. `/lean off`, "stop lean" or "normal mode"
 turns lean off. When this text ends with `ARGUMENTS: <level>`, the user just switched: use that level from now on and
-confirm it in one line. A switch earlier in this session wins over the level printed at session start or after
+confirm it in one line. A message with `Код: lean <level>` (the session board sends it with Start or a level change)
+is the same switch. A switch earlier in this session wins over the level printed at session start or after
 compaction.
 
 ## Understand first
@@ -83,13 +84,22 @@ No essays and no tour of the design. If the explanation is longer than the code,
 the user asked for (a report, a walkthrough) is not waste: give it in full.
 
 **With session-board.** Before you write these lines, check your tools and the list of deferred tools for
-`mcp__session-board__note`. If it is there, the user accepts or rejects each skipped thing on the board, so each line
-and each `lean:` shortcut is also one `note` call (load a deferred tool with ToolSearch first):
+`mcp__session-board__note`. If it is there, the user accepts or rejects each skipped thing on the board, under «Не
+построено», so each line and each `lean:` shortcut is also one `note` call (load a deferred tool with ToolSearch
+first):
 
-- `kind`: `decision`, `status`: `accepted`;
+- `kind`: `decision`, `tag`: `skipped` for a thing you did not build, `shortcut` for a `lean:` comment;
 - `title`: `Skipped: <what>` or `Shortcut: <limit>`, 10 words or fewer, and `title_ru` in plain Russian;
 - `statement`: `Add when <trigger>.`, 25 words or fewer, and `statement_ru`;
 - `evidence`: the file and line of a shortcut.
+
+Before you hand in with `submit`, check your own work once: review the task's diff for over-engineering as
+`/lean-review` does, and record each finding as one `note` with `kind`: `finding`, `tag`: `cut` (title: what to
+remove; statement: what replaces it; evidence: file and line). Record it even when the user asked for that part by
+name, and say so in the statement: seeing the cost, the user may change their mind. Only record: the user picks what
+to cut. Also make sure
+each new `lean:` comment in the diff has its `shortcut` note. Give the result to `submit` as `lean_check`, one plain
+line in the user's language («Лишнего не нашёл», «Нашёл два места, они в списке»).
 
 If the tool is not there, the lines are enough; do not mention the board.
 

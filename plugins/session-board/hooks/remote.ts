@@ -3,6 +3,7 @@
 // text card, the next step comes as a question dialog (Remote Control forwards those), and short words in the chat
 // press the board's buttons.
 import type { Ledger, Phase } from '../types'
+import { leanItems, TAG } from './lean'
 import { criteriaOf, verdictLine } from './task'
 import { waitingQuestions } from './views'
 
@@ -55,6 +56,12 @@ export function boardText(L: Ledger): string {
   if (crit.length) {
     out.push('', `**Готово, когда** · ${crit.filter(k => k.status === 'proven').length} из ${crit.length}`)
     for (const k of crit) out.push(`- ${mark(k.status)} ${sub?.results?.[k.id] ?? k.title.ru}`)
+  }
+  const lean = t.phase === 'review' ? leanItems(L) : []
+  if (lean.length || (t.phase === 'review' && sub?.leanCheck)) {
+    out.push('', `**Не построено** · ${lean.length}`)
+    if (sub?.leanCheck) out.push(`Самопроверка на лишнее: ${sub.leanCheck}`)
+    for (const n of lean) out.push(`- ${TAG[n.tag!].label}: ${n.title.ru}${n.statement ? ` — ${n.statement.ru}` : ''}`)
   }
   const hint = t.phase === 'intake' ? 'Ответьте «Старт», чтобы начать, или напишите, что поправить.'
     : t.phase === 'review' ? 'Ответьте «Принять» или «Вернуть: что поправить».'

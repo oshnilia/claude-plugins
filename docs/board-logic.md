@@ -110,6 +110,22 @@ The verdict lives in the pane, not in the report: a local page cannot write into
 Everything goes to Claude in ONE message. Remarks marked "make it a rule" go to `.claude/tasks/RULES.md`;
 the board gives these rules to Claude at the start of every session in the project.
 
+## lean in the flow
+
+With the [lean](../plugins/lean) plugin the board adds lean to each step. It learns about lean from the line lean's
+hook prints at session start ("lean is on. Level: full."), through `session.append`; a resumed session gets no new
+line, so the board also looks for it in the conversation at start and with the person's first message. Without that
+line the board shows nothing of lean.
+
+| Step | What lean adds |
+|---|---|
+| Brief | `code`: lite, full, ultra or off, next to authority. Unset means lean's own setting. Start says `Код: lean <level> — …`; a change during the work goes as a board note. |
+| Work | Claude records each thing it did not build (decision, tag `skipped`) and each `lean:` shortcut (decision, tag `shortcut`) with the note tool. The Work screen counts them. |
+| Hand-in | The submit tool asks Claude to review the task's diff for over-engineering first and to record each finding (finding, tag `cut`), also for parts the person asked for by name; it never changes the code for them. `lean_check` carries the result in one plain line. |
+| Acceptance | «Не построено» lists the three kinds. A mark is a fix in the one verdict: «добавить сейчас», «сделать полностью», «убрать». «Проверить на лишнее» sends the review request again. |
+| Report, phone | A block «Что не построено и когда добавить»; the same list in the `/board` text card. |
+| Project | The Task screen counts `lean:` comment markers with `git grep` (read only; markdown and JSON left out), at session start and after turns that changed files. «показать список» asks Claude for the lean-debt list. |
+
 ## Files: the folder is the source of truth
 
 ```

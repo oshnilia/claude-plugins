@@ -1,6 +1,7 @@
 import type { ElementTable } from 'claude-code'
 
-import type { Authority, BoardStatus, DiffView, Kind, Ledger, LedgerNode, LiveEvent, OpenTask, Phase, QA, Verdict } from '../types'
+import type { Authority, BoardStatus, DiffView, Kind, LeanLevel, Ledger, LedgerNode, LiveEvent, OpenTask, Phase, QA, Verdict } from '../types'
+import { LEAN_DEBT_ASK, LEAN_LEVEL, LEAN_LEVELS, LEAN_REVIEW_ASK, leanItems, TAG } from './lean'
 import { AUTHORITIES, AUTHORITY, criteriaOf, phaseView, proofOf, ruleCandidates, verdictLine, type VerdictKind } from './task'
 
 // Layout rules: docs/mod-design.md. Width comes from e.props.bodyColumns. Rows are a fixed gutter
@@ -29,6 +30,7 @@ export type Actions = {
   formalize: () => void
   fixTask: (text: string) => void
   setAuthority: (a: Authority) => void
+  setCode: (level: LeanLevel) => void
   start: () => void
   addItem: (kind: AddKind, text: string) => void
   stale: (id: string) => void
@@ -57,6 +59,10 @@ export type Data = {
   editing: string
   openTasks: OpenTask[]
   policy: Authority
+  /** the lean plugin in this session; null hides every lean part of the board */
+  lean: { level: LeanLevel } | null
+  /** `lean:` shortcuts in the project; null: not counted */
+  debt: { markers: number; files: number } | null
   /** keys of board messages Claude has not answered yet */
   sent: string[]
   width: number
@@ -105,7 +111,8 @@ const gone = (n: LedgerNode) => ['superseded', 'dropped'].includes(n.status)
 const isClosed = (n: LedgerNode) => ['done', 'dropped', 'superseded', 'refuted', 'answered', 'lifted', 'rejected'].includes(n.status)
 const kidsOf = (L: Ledger, id: string) => L.nodes.filter(n => n.parent === id)
 export const waitingQuestions = (L: Ledger) => L.nodes.filter(n => n.kind === 'open' && n.status === 'open' && (n.ask ?? 'user') === 'user')
-export const myDecisions = (L: Ledger) => L.nodes.filter(n => n.kind === 'decision' && n.by !== 'user' && !gone(n))
+// lean's items have a section of their own at Acceptance
+export const myDecisions = (L: Ledger) => L.nodes.filter(n => n.kind === 'decision' && n.by !== 'user' && !gone(n) && !n.tag)
 
 /** Vertical rhythm, in rows. Desktop needs explicit room: nothing adds it for us. */
 const SPACE = { section: 2, item: 1 } as const
@@ -267,6 +274,37 @@ function AuthorityPicker(els: Els, key: string, current: Authority, a: Actions) 
   )
 }
 
+/** The lean level of the task. Unset follows lean's own setting, shown as the current one. */
+function LeanPicker(els: Els, key: string, picked: LeanLevel | undefined, lean: { level: LeanLevel }, a: Actions) {
+  const { Box, Text, Button } = els
+  const current = picked ?? lean.level
+  return (
+    <Box key={key} flexDirection="column">
+      {ActionBar(els, `${key}-b`, LEAN_LEVELS.map(level => (
+        <Button key={`code-${level}`} label={LEAN_LEVEL[level].label} variant={level === current ? 'primary' : 'secondary'} onPress={() => a.setCode(level)} />
+      )))}
+      <Box marginTop={SPACE.item}><Text wrap="wrap">{LEAN_LEVEL[current].ru}</Text></Box>
+      {picked ? null : <Text dimColor wrap="wrap">Как в настройках lean. Выбери уровень, чтобы задать его этой задаче.</Text>}
+    </Box>
+  )
+}
+
+/** The project's `lean:` shortcuts: how many, and a request for the list. */
+function Debt(els: Els, d: Data, a: Actions) {
+  const { Box, Text, Button } = els
+  if (!d.lean || !d.debt) return null
+  const { markers, files } = d.debt
+  return (
+    <Box key="debt" flexDirection="column">
+      {Rule(els, 'r-debt', 'Срезанные углы в проекте', markers)}
+      <Box marginTop={SPACE.item}>
+        <Text wrap="wrap" dimColor={!markers}>{markers ? `Меток lean: ${markers} в файлах: ${files}. Каждая называет предел и когда переделать.` : 'Меток lean в коде нет.'}</Text>
+      </Box>
+      {markers ? ActionBar(els, 'debt-a', [Once(els, d, 'lean-debt', <Button key="debt-list" plain label="показать список" onPress={() => a.tellClaude(LEAN_DEBT_ASK, 'lean-debt')} />)]) : null}
+    </Box>
+  )
+}
+
 const ADD_LABEL: Record<AddKind, { button: string; field: string; hint: string }> = {
   rule: { button: '+ правило', field: 'Правило', hint: 'как Claude должен работать' },
   ban: { button: '+ запрет', field: 'Запрет', hint: 'чего Claude делать нельзя' },
@@ -306,6 +344,7 @@ function NoTask(els: Els, d: Data, a: Actions) {
       </Box>
       {Rule(els, 'r-policy', 'Полномочия по умолчанию в проекте')}
       {AuthorityPicker(els, 'policy', d.policy, a)}
+      {Debt(els, d, a)}
       {d.openTasks.length ? Rule(els, 'r-open', 'Начатые задачи в проекте', d.openTasks.length) : null}
       {d.openTasks.map((t, i) => (
         <Box key={`ot-${t.dir}`} flexDirection="column" marginTop={i === 0 ? SPACE.item : SPACE.section}>
@@ -335,7 +374,7 @@ export function TaskView(els: Els, d: Data, a: Actions) {
     <Box flexDirection="column">
       <Box flexDirection="column" marginTop={SPACE.item}>
         <Text bold wrap="wrap">{t.title.ru}</Text>
-        <Text dimColor wrap="wrap">{PHASE_LABEL[t.phase]}{t.round > 1 ? ` · раунд ${t.round}` : ''} · полномочия: {AUTHORITY[t.authority].label}</Text>
+        <Text dimColor wrap="wrap">{PHASE_LABEL[t.phase]}{t.round > 1 ? ` · раунд ${t.round}` : ''} · полномочия: {AUTHORITY[t.authority].label}{d.lean ? ` · код: ${LEAN_LEVEL[t.code ?? d.lean.level].label}` : ''}</Text>
       </Box>
       {!t.formal ? (
         <Box flexDirection="column" borderStyle="round" borderColor={ORANGE} paddingX={1} marginTop={SPACE.item}>
@@ -364,6 +403,7 @@ export function TaskView(els: Els, d: Data, a: Actions) {
         : <Text dimColor>Правил нет.</Text>)}
       {t.outOfScope.length ? section('out', 'Вне рамок', t.outOfScope.map((s, i) => Row(els, `out-${i}`, 3, <Text dimColor>–</Text>, <Text wrap="wrap">{s}</Text>))) : null}
       {section('auth', 'Полномочия', AuthorityPicker(els, 'task-auth', t.authority, a))}
+      {d.lean ? section('code', 'Код', LeanPicker(els, 'task-code', t.code, d.lean, a)) : null}
       {t.materials.length ? section('mat', 'Материалы', t.materials.map((s, i) => Row(els, `mat-${i}`, 3, <Text dimColor>·</Text>, <Text wrap="wrap">{s}</Text>))) : null}
       {t.phase === 'work' || t.phase === 'review' ? (
         <Box flexDirection="column">
@@ -376,6 +416,7 @@ export function TaskView(els: Els, d: Data, a: Actions) {
           ? Field(els, 'intake', 'Новая задача', 'что сделать, зачем, что сдать, что нельзя', 'поставить', v => a.newTask(v), () => a.edit(''))
           : ActionBar(els, 'ta-a', [Once(els, d, 'intake', <Button key="task-new" label="Новая задача" variant="primary" onPress={() => a.edit('intake')} />)], 0, SPACE.section)
       ) : null}
+      {Debt(els, d, a)}
       {t.dir ? Para(els, 'tdir', `Папка задачи: ${t.dir}`, true, SPACE.section) : null}
     </Box>
   )
@@ -482,6 +523,7 @@ export function WorkView(els: Els, d: Data, a: Actions) {
   const crit = criteriaOf(L)
   const mine = myDecisions(L).length
   const assumptions = L.nodes.filter(n => n.kind === 'assumption' && !isClosed(n)).length
+  const notBuilt = leanItems(L).length
   return (
     <Box flexDirection="column">
       {NeedsYou(els, d, a)}
@@ -503,7 +545,7 @@ export function WorkView(els: Els, d: Data, a: Actions) {
           {Rule(els, 'r-pile', 'Копится на приёмку')}
           <Box marginTop={SPACE.item}>
             <Text wrap="wrap" dimColor>
-              {crit.length ? `критериев доказано ${crit.filter(k => k.status === 'proven').length} из ${crit.length} · ` : ''}решений Claude {mine} · допущений {assumptions}
+              {crit.length ? `критериев доказано ${crit.filter(k => k.status === 'proven').length} из ${crit.length} · ` : ''}решений Claude {mine} · допущений {assumptions}{notBuilt ? ` · не построено ${notBuilt}` : ''}
             </Text>
           </Box>
           {ActionBar(els, 'pile-a', [<Button key="pile-open" plain label="посмотреть" onPress={() => a.setView('review')} />])}
@@ -546,6 +588,27 @@ function ReviewItem(els: Els, d: Data, a: Actions, n: LedgerNode, mark: unknown,
         ], 3)}
     </Box>
   )
+}
+
+/** What Claude chose not to build, its shortcuts and the over-engineering it found: a mark asks for the change. */
+function NotBuilt(els: Els, d: Data, a: Actions) {
+  const { Text, Button } = els
+  const items = leanItems(d.ledger)
+  const check = d.ledger.task?.submitted?.leanCheck
+  if (!items.length && !d.lean && !check) return null
+  const review = d.lean && d.ledger.task?.phase === 'review'
+    ? ActionBar(els, 'lean-a', [Once(els, d, 'lean-review', <Button key="lean-review" label="Проверить на лишнее" onPress={() => a.tellClaude(LEAN_REVIEW_ASK, 'lean-review')} />)])
+    : null
+  return [
+    Rule(els, 'r-rv-lean', 'Не построено', items.length),
+    Para(els, 'lean-hint', items.length
+      ? 'Что Claude сознательно не сделал, где срезал угол и что нашёл лишним. Молчание — оставить как есть.'
+      : 'Claude ничего не пропустил и не срезал.', true),
+    check ? Para(els, 'lean-check', `Самопроверка на лишнее: ${check}`) : d.lean ? Para(els, 'lean-check', 'Самопроверки на лишнее в сдаче нет.', true) : null,
+    ...items.map((n, i) => ReviewItem(els, d, a, n, <Text color={COLOR.decision} bold>{TAG[n.tag!].glyph}</Text>,
+      n.statement?.ru ?? '', proofOf(n), TAG[n.tag!].mark, i === 0)),
+    review,
+  ]
 }
 
 export function ReviewView(els: Els, d: Data, a: Actions) {
@@ -607,6 +670,7 @@ export function ReviewView(els: Els, d: Data, a: Actions) {
       {mine.map((n, i) => ReviewItem(els, d, a, n, <Text color={COLOR.decision} bold>◆</Text>, n.statement?.ru ?? '',
         [n.rejected?.length ? `отверг: ${n.rejected.map(r => r.ru).join('; ')}` : '', n.accepting ? `цена: ${n.accepting.ru}` : ''].filter(Boolean),
         'отменить', i === 0))}
+      {NotBuilt(els, d, a)}
       {assumptions.length ? Rule(els, 'r-rv-as', 'Допущения', assumptions.length) : null}
       {assumptions.map((n, i) => ReviewItem(els, d, a, n, <Text dimColor>≈</Text>, n.statement?.ru ?? '', [], 'неверно', i === 0))}
       {sub?.notDone.length || risks.length ? Rule(els, 'r-rv-nd', 'Не сделано и риски') : null}
