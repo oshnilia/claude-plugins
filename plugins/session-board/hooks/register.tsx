@@ -8,9 +8,10 @@ import { applyOps, cleanBrief, emptyLedger, parseOp, renderBrief, renderMarkdown
 import { renderReport, type ReportDiff } from './report'
 import {
   AUTHORITY, briefOps, criteriaOf, emptyVerdict, isAuthority, parseTaskInput, protocol, renderTaskMd, ruleCandidates, slugify, startMessage,
-  VERDICT_LABEL, verdictMessage, type VerdictKind,
+  VERDICT_LABEL, verdictLine, verdictMessage, type VerdictKind,
 } from './task'
 import { LADDER_MIN_WORDS, proseWords, RUNGS } from './ladder'
+import { MobileBoard, type MobileActions } from './mobile'
 import { Band, Board, resolveView, type Actions, type AddKind, type Data } from './views'
 
 const PANE = 'board'
@@ -41,7 +42,7 @@ const ladder = atom({ plugin: 'session-board', key: 'ladder' } as const, false)
 
 type Current = { n: number; ask: string; tools: Record<string, number>; files: Set<string>; paths: Set<string>; errors: string[]; ops: Op[]; touched: string[] }
 
-const cfg = { updateMode: 'every-turn' as 'every-turn' | 'manual', minTools: 2, autoOpen: true, injectAfterCompact: true }
+const cfg = { updateMode: 'every-turn' as 'every-turn' | 'manual', minTools: 2, autoOpen: true, injectAfterCompact: true, push: true }
 let current: Current | null = null
 let busy = false
 let pending: TurnDigest | 'bootstrap' | null = null
@@ -212,6 +213,17 @@ function openBoard($: EngineInterface, asked = false) {
 /** A message from the board into the session, as the person's own. */
 function say($: EngineInterface, text: string) {
   $.prompt.submit({ text, asUser: true }).catch(() => $.ui.toast('Не удалось отправить сообщение в сессию'))
+}
+
+/** A push to the phone (Remote Control) or a desktop notification. The tool skips it when the person is at the
+ * screen; with no phone or the tool off, the board still shows the same thing. */
+async function push($: EngineInterface, text: string) {
+  if (!cfg.push) return
+  try {
+    await $.tool.call({ tool: 'PushNotification', message: text.slice(0, 190), status: 'proactive' } as never)
+  } catch {
+    // no such tool, or it was refused: nothing to do
+  }
 }
 
 /** Send once: a second press of the same action waits until Claude has answered the first. */
@@ -568,11 +580,172 @@ const SUBMIT_TOOL_DESCRIPTION =
   'Put ids, commands, paths, run ids and numbers into evidence: the board hides evidence under a toggle. ' +
   'The board builds an HTML report and shows the person the Acceptance screen. After the call, end your turn and wait for one verdict.'
 
+// ---------- board actions: the same for every surface ----------
+
+function boardActions($: EngineInterface): Actions {
+  // board actions run outside the drawing; a failed one says so instead of failing silently
+  const later = (fn: () => Promise<unknown>) => void fn().catch((err: unknown) => $.ui.toast(`Доска: ${(err as Error).message.slice(0, 80)}`))
+  return {
+    setView: x => {
+      void update($, view, () => x)
+      void update($, editing, () => '')
+    },
+    toggle: id => void update($, expanded, list => (list.includes(id) ? list.filter(x => x !== id) : [...list, id])),
+    refresh: () => {
+      void read($, ledger).then(x => schedule($, x.nodes.length ? catchUpDigest(x) ?? lastDigest(x) : 'bootstrap'))
+    },
+    edit: id => void update($, editing, () => id),
+    startAnswer: id => void update($, answering, () => id),
+    submitAnswer: (id, text) => {
+      const t = text.trim()
+      void update($, answering, () => '')
+      if (!t) return
+      void read($, ledger).then(x => {
+        const n = x.nodes.find(y => y.id === id)
+        say($, `Ответ на твой вопрос${n ? ` «${n.title.ru}»` : ''}: ${t}`)
+        void commit($, [{ op: 'update', id, status: 'answered' }], current?.n ?? x.turns.at(-1)?.n ?? 1, 'user')
+      })
+    },
+    ask: q => {
+      const t = q.trim()
+      if (t) $.clock.after(0, () => void runAsk($, t))
+    },
+    askAbout: q => {
+      void update($, view, () => 'ask')
+      $.clock.after(0, () => void runAsk($, q))
+    },
+    undoDecision: id => {
+      void read($, ledger).then(x => {
+        const n = x.nodes.find(y => y.id === id)
+        if (!n) return
+        const alt = n.rejected?.length ? ` Альтернативы были: ${n.rejected.map(r => r.ru).join('; ')}.` : ''
+        void sendOnce($, `undo:${id}`, `Отмени своё решение «${n.title.ru}» (${id}). Предложи, что сделать вместо него, и спроси меня перед изменениями.${alt}`)
+      })
+    },
+    openFile: path => later(() => openFile($, path)),
+    showDiff: path => later(() => toggleDiff($, path)),
+    tellClaude: (text, key) => later(() => sendOnce($, key ?? text.slice(0, 60), text)),
+    newTask: text => {
+      const t = text.trim()
+      void update($, editing, () => '')
+      if (t) later(() => sendOnce($, 'intake', `Новая задача: ${t}`))
+    },
+    formalize: () => later(() => sendOnce($, 'formalize', 'Оформи текущую работу как задание через тул task: цель, результат, критерии «готово, когда», правила, вне рамок, полномочия. Все недостающие вопросы задай одним окном. Потом жди «Старт».')),
+    fixTask: text => {
+      const t = text.trim()
+      void update($, editing, () => '')
+      if (t) later(() => sendOnce($, 'fix', `Поправь задание: ${t}. Обнови бриф через тул task и жди «Старт».`))
+    },
+    setAuthority: level => later(() => setAuthority($, level)),
+    start: () => later(() => startTask($)),
+    addItem: (kind, text) => later(() => addItem($, kind, text)),
+    stale: id => later(() => markStale($, id)),
+    sendNotes: () => later(() => sendNotes($)),
+    mark: (id, m) => void update($, verdict, v => {
+      const marks = { ...v.marks }
+      if (marks[id] === m) delete marks[id]
+      else marks[id] = m
+      return { ...v, marks }
+    }),
+    comment: (id, text) => {
+      void update($, editing, () => '')
+      void update($, verdict, v => {
+        const comments = { ...v.comments }
+        const t = text.trim()
+        if (t) comments[id] = t
+        else delete comments[id]
+        return { ...v, comments }
+      })
+    },
+    addGeneral: text => {
+      void update($, editing, () => '')
+      const t = text.trim()
+      if (t) void update($, verdict, v => ({ ...v, general: [...v.general, t] }))
+    },
+    toggleRule: text => void update($, verdict, v => ({ ...v, rules: v.rules.includes(text) ? v.rules.filter(r => r !== text) : [...v.rules, text] })),
+    sendVerdict: kind => later(() => sendVerdict($, kind)),
+    openReport: () => later(() => openReport($)),
+    continueTask: dir => later(() => continueTask($, dir)),
+  }
+}
+
+// On the phone the person cannot type into the board: free text goes through the question dialog ("Other").
+function mobileActions($: EngineInterface, a: Actions): MobileActions {
+  const later = (fn: () => Promise<unknown>) => void fn().catch((err: unknown) => $.ui.toast(`Доска: ${(err as Error).message.slice(0, 80)}`))
+  const ask = async (q: string, options: string[]) => {
+    try {
+      return (await $.ui.ask(q, options)).trim()
+    } catch {
+      return '' // dismissed
+    }
+  }
+  const IN_CHAT = 'Напишу в чате'
+  return {
+    start: () => a.start(),
+    accept: () => a.sendVerdict('accept'),
+    answer: (id, text) => {
+      void update($, sent, list => [...list, { key: `answer:${id}`, text, started: false }])
+      a.submitAnswer(id, text)
+    },
+    askAnswer: id => later(async () => {
+      const n = (await read($, ledger)).nodes.find(x => x.id === id)
+      if (!n) return
+      const t = await ask(`${n.title.ru.replace(/[?.]$/, '')}? Свой ответ впишите в «Other».`, [IN_CHAT, 'Позже'])
+      if (t && t !== IN_CHAT && t !== 'Позже') {
+        await update($, sent, list => [...list, { key: `answer:${id}`, text: t, started: false }])
+        a.submitAnswer(id, t)
+      }
+    }),
+    askFix: () => later(async () => {
+      const t = await ask('Что поправить в задании? Впишите в «Other».', [IN_CHAT, 'Ничего'])
+      if (t && t !== IN_CHAT && t !== 'Ничего') a.fixTask(t)
+    }),
+    askVerdict: () => later(async () => {
+      const kind = await ask('Что делаем с работой?', ['Принять с правками', 'Вернуть на доработку', 'Пока ничего'])
+      if (!kind || kind === 'Пока ничего') return
+      const v: VerdictKind = kind === 'Принять с правками' ? 'fixes' : 'return'
+      // a text typed under "Other" for the first question is itself the remark: send it back
+      const typed = kind !== 'Принять с правками' && kind !== 'Вернуть на доработку' ? kind : ''
+      const remark = typed || (await ask('Что поправить? Впишите в «Other».', [IN_CHAT, 'Без комментария']))
+      if (!remark) return
+      if (remark !== 'Без комментария') {
+        const text = remark === IN_CHAT ? 'Правки напишу следующим сообщением в чате.' : remark
+        await update($, verdict, x => ({ ...x, general: [...x.general, text] }))
+      }
+      await sendVerdict($, typed ? 'return' : v)
+    }),
+    askNewTask: () => later(async () => {
+      const t = await ask('Какую задачу поставить? Опишите её в «Other».', [IN_CHAT, 'Оформить текущую работу'])
+      if (t === 'Оформить текущую работу') a.formalize()
+      else if (t && t !== IN_CHAT) a.newTask(t)
+    }),
+    askNote: () => later(async () => {
+      const t = await ask('Что передать Claude? Впишите в «Other».', [IN_CHAT, 'Ничего'])
+      if (t && t !== IN_CHAT && t !== 'Ничего') say($, t)
+    }),
+    publishReport: () => later(async () => {
+      const path = await buildReport($)
+      if (!path) {
+        $.ui.toast('Доска: у задачи ещё нет папки, отчёта нет')
+        return
+      }
+      await sendOnce($, 'publish-report', `Опубликуй HTML-отчёт задачи (${path}) приватной страницей claude.ai и пришли ссылку. Это моё разрешение на одну публикацию этого отчёта.`)
+    }),
+  }
+}
+
+async function mobileBoard($: EngineInterface, e: { surface: 'mobile' }, bodyColumns: number) {
+  const els = $.ui.resolve(e as never) as unknown as Parameters<typeof MobileBoard>[0]
+  const d = { ledger: await read($, ledger), width: Math.max(20, bodyColumns - 1), sent: (await read($, sent)).map(x => x.key) }
+  return MobileBoard(els, d, mobileActions($, boardActions($)))
+}
+
 export const register: Register = (on, options) => {
   cfg.updateMode = options.update === 'manual' ? 'manual' : 'every-turn'
   cfg.minTools = typeof options.minTools === 'number' ? options.minTools : 2
   cfg.autoOpen = options.autoOpen !== false
   cfg.injectAfterCompact = options.injectAfterCompact !== false
+  cfg.push = options.push !== false
   current = null
   busy = false
   pending = null
@@ -741,7 +914,26 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'board' }, async $ => {
     await $.ui.open({ id: PANE, title: TITLE })
-    return { text: 'Session board opened.' }
+    const L = await read($, ledger)
+    const t = L.task
+    return { text: t ? `Доска: «${t.title.ru}», фаза ${t.phase}, ${verdictLine(criteriaOf(L))}.` : 'Доска: задания нет.' }
+  })
+
+  // the card under /board: the phone has no band above the prompt, so the board can live in the transcript too
+  on('ui.render', { component: 'CommandOutput', props: { command: 'board' } }, async ($, e) => {
+    if (e.surface === 'mobile') return mobileBoard($, e, 60)
+    const els = $.ui.resolve(e)
+    const Svg = 'Svg' in els ? els.Svg : undefined
+    const card = { Box: els.Box, Text: els.Text, Button: els.Button, ...(Svg ? { Svg } : {}) } as unknown as Parameters<typeof MobileBoard>[0]
+    const d = { ledger: await read($, ledger), width: 60, sent: (await read($, sent)).map(x => x.key) }
+    return MobileBoard(card, d, mobileActions($, boardActions($)))
+  })
+
+  // a phone joined over Remote Control: put the board in front of it
+  on('session.attach', { surface: 'mobile' }, async ($, e, next) => {
+    const r = await next(e)
+    openBoard($)
+    return r
   })
 
   on('command.run', { command: 'board-update' }, async $ => {
@@ -933,6 +1125,7 @@ export const register: Register = (on, options) => {
     if (!op) return reply('Not recorded: kind and title are required.')
     const [added] = await commit($, [op], turn, 'claude')
     if (current && added) current.touched.push(added)
+    if (i.kind === 'open' && (s('ask') ?? 'user') === 'user') await push($, `Нужен ваш ответ: ${s('title_ru') ?? s('title') ?? ''}`)
     return reply(`Recorded ${added}.`)
   })
 
@@ -950,7 +1143,10 @@ export const register: Register = (on, options) => {
     if ('error' in input) return reply(`Not recorded: ${input.error}.`)
     const at = await iso($)
     let L = await read($, ledger)
-    if (L.task?.phase === 'accepted') {
+    // a brief with another title while the task waits for acceptance is a new task, not an amend: amending would
+    // supersede the handed-in criteria (2026-10-04). The old task keeps its folder and waits under "open tasks".
+    const waiting = L.task?.phase === 'review' && L.task.title.en.trim() !== input.title.en.trim() ? L.task : null
+    if (L.task?.phase === 'accepted' || waiting) {
       // a new task after an accepted one starts a fresh ledger; the old one stays in its folder
       L = await update($, ledger, prev => ({ ...emptyLedger(prev.sid), updated: at }))
       await update($, verdict, () => emptyVerdict())
@@ -978,8 +1174,10 @@ export const register: Register = (on, options) => {
     await update($, editing, () => '')
     await refreshOpenTasks($)
     openBoard($)
+    if (task.phase === 'intake') await push($, `Задание готово: «${task.title.ru}». Проверьте его и нажмите «Старт».`)
+    const kept = waiting ? ` The previous task «${waiting.title.en}» still waits for the person's verdict in ${waiting.dir || 'its folder'}.` : ''
     return reply(task.phase === 'intake'
-      ? `Task brief recorded${dir ? ` in ${dir}/task.md` : ''}. End your turn now: the person reviews the brief on the board and presses Start. Do not start the work before that.`
+      ? `Task brief recorded${dir ? ` in ${dir}/task.md` : ''}.${kept} End your turn now: the person reviews the brief on the board and presses Start. Do not start the work before that.`
       : `Task brief updated${dir ? ` in ${dir}/task.md` : ''}. Go on with the work.`)
   })
 
@@ -1017,6 +1215,7 @@ export const register: Register = (on, options) => {
     }
     openBoard($)
     $.ui.toast(closing ? 'Правки внесены, задача закрыта' : 'Работа сдана: открой «Приёмку»')
+    if (!closing) await push($, `Работа сдана: «${t.title.ru}». ${verdictLine(criteriaOf(await read($, ledger)))}. Примите или верните.`)
     const missing = crit.filter(c => !items.some(it => it.id === c.id)).map(c => c.id)
     return reply(closing
       ? `Fixes recorded; the task is closed.${path ? ` Report: ${path}.` : ''}`
@@ -1026,6 +1225,7 @@ export const register: Register = (on, options) => {
   // ---------- drawing ----------
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    if (e.surface === 'mobile') return mobileBoard($, e, e.props.bodyColumns)
     if (e.surface !== 'desktop' && e.surface !== 'terminal') {
       const { Markdown } = $.ui.resolve(e)
       return <Markdown text={renderMarkdown(await read($, ledger), 'ru').slice(0, 9000)} />
@@ -1052,90 +1252,7 @@ export const register: Register = (on, options) => {
       width: Math.max(24, e.props.bodyColumns - 1),
       ...(e.surface === 'desktop' ? { svg: $.ui.resolve(e).Svg } : {}),
     }
-    // board actions run outside the drawing; a failed one says so instead of failing silently
-    const later = (fn: () => Promise<unknown>) => void fn().catch((err: unknown) => $.ui.toast(`Доска: ${(err as Error).message.slice(0, 80)}`))
-    const a: Actions = {
-      setView: x => {
-        void update($, view, () => x)
-        void update($, editing, () => '')
-      },
-      toggle: id => void update($, expanded, list => (list.includes(id) ? list.filter(x => x !== id) : [...list, id])),
-      refresh: () => {
-        void read($, ledger).then(x => schedule($, x.nodes.length ? catchUpDigest(x) ?? lastDigest(x) : 'bootstrap'))
-      },
-      edit: id => void update($, editing, () => id),
-      startAnswer: id => void update($, answering, () => id),
-      submitAnswer: (id, text) => {
-        const t = text.trim()
-        void update($, answering, () => '')
-        if (!t) return
-        void read($, ledger).then(x => {
-          const n = x.nodes.find(y => y.id === id)
-          say($, `Ответ на твой вопрос${n ? ` «${n.title.ru}»` : ''}: ${t}`)
-          void commit($, [{ op: 'update', id, status: 'answered' }], current?.n ?? x.turns.at(-1)?.n ?? 1, 'user')
-        })
-      },
-      ask: q => {
-        const t = q.trim()
-        if (t) $.clock.after(0, () => void runAsk($, t))
-      },
-      askAbout: q => {
-        void update($, view, () => 'ask')
-        $.clock.after(0, () => void runAsk($, q))
-      },
-      undoDecision: id => {
-        void read($, ledger).then(x => {
-          const n = x.nodes.find(y => y.id === id)
-          if (!n) return
-          const alt = n.rejected?.length ? ` Альтернативы были: ${n.rejected.map(r => r.ru).join('; ')}.` : ''
-          void sendOnce($, `undo:${id}`, `Отмени своё решение «${n.title.ru}» (${id}). Предложи, что сделать вместо него, и спроси меня перед изменениями.${alt}`)
-        })
-      },
-      openFile: path => later(() => openFile($, path)),
-      showDiff: path => later(() => toggleDiff($, path)),
-      tellClaude: (text, key) => later(() => sendOnce($, key ?? text.slice(0, 60), text)),
-      newTask: text => {
-        const t = text.trim()
-        void update($, editing, () => '')
-        if (t) later(() => sendOnce($, 'intake', `Новая задача: ${t}`))
-      },
-      formalize: () => later(() => sendOnce($, 'formalize', 'Оформи текущую работу как задание через тул task: цель, результат, критерии «готово, когда», правила, вне рамок, полномочия. Все недостающие вопросы задай одним окном. Потом жди «Старт».')),
-      fixTask: text => {
-        const t = text.trim()
-        void update($, editing, () => '')
-        if (t) later(() => sendOnce($, 'fix', `Поправь задание: ${t}. Обнови бриф через тул task и жди «Старт».`))
-      },
-      setAuthority: level => later(() => setAuthority($, level)),
-      start: () => later(() => startTask($)),
-      addItem: (kind, text) => later(() => addItem($, kind, text)),
-      stale: id => later(() => markStale($, id)),
-      sendNotes: () => later(() => sendNotes($)),
-      mark: (id, m) => void update($, verdict, v => {
-        const marks = { ...v.marks }
-        if (marks[id] === m) delete marks[id]
-        else marks[id] = m
-        return { ...v, marks }
-      }),
-      comment: (id, text) => {
-        void update($, editing, () => '')
-        void update($, verdict, v => {
-          const comments = { ...v.comments }
-          const t = text.trim()
-          if (t) comments[id] = t
-          else delete comments[id]
-          return { ...v, comments }
-        })
-      },
-      addGeneral: text => {
-        void update($, editing, () => '')
-        const t = text.trim()
-        if (t) void update($, verdict, v => ({ ...v, general: [...v.general, t] }))
-      },
-      toggleRule: text => void update($, verdict, v => ({ ...v, rules: v.rules.includes(text) ? v.rules.filter(r => r !== text) : [...v.rules, text] })),
-      sendVerdict: kind => later(() => sendVerdict($, kind)),
-      openReport: () => later(() => openReport($)),
-      continueTask: dir => later(() => continueTask($, dir)),
-    }
+    const a = boardActions($)
     try {
       return Board(els, d, a)
     } catch (err) {
