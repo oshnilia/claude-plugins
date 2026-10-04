@@ -4,6 +4,11 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
 ## notion-tasks
 
+### 0.2.0 — 2026-10-04
+
+- session-board's free mode needs no ticket, even with `require_ticket`. At the summary each kept idea that still
+  needs work becomes a follow-up ticket; its link goes into the idea, so the summary shows it.
+
 ### 0.1.0 — 2026-10-04
 
 - New plugin: your own Notion task board as the list of work. `/notion-tasks:setup` finds or creates the board, reads
@@ -17,6 +22,19 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 - A binding that git tracks is refused; a ticket's text never widens Claude's authority.
 
 ## session-board
+
+### 0.8.0 — 2026-10-04
+
+- Free mode («Свободный режим») for sessions that discuss, try and iterate instead of closing one task: no brief, no
+  criteria, no acceptance. The button on the Task screen or the chat word «Свободный режим» turns it on at any time; a
+  running task pauses in its folder and waits under «Начатые задачи».
+- Claude works as a partner and keeps the ideas on the board: a new ledger kind `idea` (I) with the statuses open,
+  trying, kept and dropped. The Work screen and the band show the ideas instead of criteria.
+- «Подвести итог» (button or the chat word «Итог»): Claude gives each idea its final status and hands in through
+  `submit` without criteria. The «Итог» screen and `summary.md` in the folder list what was kept, what was dropped and
+  why, what is left, the decisions and what is next. The phone's `/board` card shows the ideas.
+- Fix: a button that sent a message no longer stays on «✓ отправлено». The board's own messages skip its prompt hook,
+  so they count as started at once and the end of the next turn clears them.
 
 ### 0.7.0 — 2026-10-04
 

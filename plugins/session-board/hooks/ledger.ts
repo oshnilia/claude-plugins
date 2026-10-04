@@ -2,12 +2,12 @@ import type { Brief, Evidence, Kind, Ledger, LedgerNode, Txt, TurnCard } from '.
 
 export const KINDS: readonly Kind[] = [
   'goal', 'constraint', 'question', 'hypothesis', 'task', 'action',
-  'finding', 'decision', 'open', 'assumption', 'risk', 'criterion',
+  'finding', 'decision', 'open', 'assumption', 'risk', 'criterion', 'idea',
 ]
 
 export const PREFIX: Record<Kind, string> = {
   goal: 'G', constraint: 'C', question: 'Q', hypothesis: 'H', task: 'T', action: 'A',
-  finding: 'F', decision: 'D', open: 'O', assumption: 'S', risk: 'R', criterion: 'K',
+  finding: 'F', decision: 'D', open: 'O', assumption: 'S', risk: 'R', criterion: 'K', idea: 'I',
 }
 
 const EVIDENCE_TYPES = ['test', 'code', 'doc', 'tool', 'user', 'inference'] as const
@@ -118,7 +118,7 @@ export function nextId(nodes: readonly LedgerNode[], kind: Kind): string {
 
 const DEFAULT_STATUS: Record<Kind, string> = {
   goal: 'active', constraint: 'active', question: 'open', hypothesis: 'untested', task: 'todo', action: 'ok',
-  finding: 'stated', decision: 'accepted', open: 'open', assumption: 'open', risk: 'open', criterion: 'todo',
+  finding: 'stated', decision: 'accepted', open: 'open', assumption: 'open', risk: 'open', criterion: 'todo', idea: 'open',
 }
 
 /** Apply ops in order. Returns the new ledger and the ids it touched. IDs are never reused. */
@@ -205,6 +205,7 @@ export function renderBrief(ledger: Ledger): string {
   const t = ledger.task
   if (t) {
     L.push(`TASK: ${t.title.en} [${t.phase}${t.round > 1 ? `, round ${t.round}` : ''}]${t.dir ? ` folder=${t.dir}` : ''}`)
+    if (t.mode === 'free') L.push('MODE: free - no brief, no criteria, no acceptance; talk, try, keep the ideas; the person asks for the summary')
     if (t.goal.en) L.push(`TASK GOAL: ${t.goal.en}`)
     if (t.result.en) L.push(`HAND IN: ${t.result.en}`)
     L.push(`AUTHORITY: ${t.authority}`)
@@ -235,6 +236,11 @@ export function renderBrief(ledger: Ledger): string {
   }
   const dead = ledger.nodes.filter(n => n.kind === 'hypothesis' && n.status === 'refuted')
   if (dead.length) L.push(`DEAD ENDS - do not retry: ${dead.map(h => `${h.id} ${h.title.en}`).join(' | ')}`)
+  const ideas = ledger.nodes.filter(n => n.kind === 'idea' && n.status !== 'superseded')
+  const live = ideas.filter(n => n.status !== 'dropped')
+  const dropped = ideas.filter(n => n.status === 'dropped')
+  if (live.length) L.push(`IDEAS: ${live.map(n => `${n.id} ${n.title.en} [${n.status}]`).join(' | ')}`)
+  if (dropped.length) L.push(`DROPPED IDEAS - do not offer again: ${dropped.map(n => `${n.id} ${n.title.en}${n.statement ? ` (${n.statement.en})` : ''}`).join(' | ')}`)
   for (const o of ledger.nodes.filter(n => n.kind === 'open' && open(n)).slice(-5)) {
     L.push(`OPEN: ${o.id} ${o.statement?.en ?? o.title.en} (ask ${o.ask ?? 'user'}; blocking=${o.blocking ? 'yes' : 'no'})`)
   }

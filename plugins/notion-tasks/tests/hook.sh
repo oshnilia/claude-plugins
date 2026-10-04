@@ -16,6 +16,7 @@ echo "$out" | head -1 | grep -q '^notion-tasks is on\.' || fail "outside git the
 echo "$out" | grep -q '"name":"Test board"' || fail "the binding is missing"
 echo "$out" | grep -q '^## Status$' || fail "the rules are missing"
 echo "$out" | grep -q '^name: rules$' && fail "the skill frontmatter leaked into the rules"
+echo "$out" | grep -q '^## Free mode$' || fail "the free-mode rules are missing"
 
 git -C "$tmp" init -q
 [ "$(run | head -1 | cut -c1-21)" = "notion-tasks is on. T" ] || fail "an untracked binding must load"

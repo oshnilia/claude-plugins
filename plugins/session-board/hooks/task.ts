@@ -35,7 +35,8 @@ export function phaseView(phase: Phase | undefined): string {
 
 // ---------- the protocol Claude reads beside the first prompt and after compaction ----------
 
-export function protocol(dir: string, rules: string): string {
+export function protocol(dir: string, rules: string, free = false): string {
+  if (free) return freeProtocol(dir, rules)
   return [
     'This session uses the session-board two-touch flow. The person runs many sessions at once: they give all input at the start and all feedback at the end.',
     '1. Intake. When the person gives a new task (or asks to write up the current work as a task), fill the task brief with the mcp__session-board__task tool: title, goal, result, done_when (2 to 5 checkable criteria), rules, out_of_scope, authority, materials. Before that call, ask ALL missing questions at once, in ONE AskUserQuestion call. After the call, stop: the person reviews the brief on the board and presses Start. From a phone or a browser (Remote Control) the board draws nothing: the person types «Старт», «Принять» or «Вернуть: …» in the chat, or answers the question /board asks; the board turns that word into the message its button sends, so treat it as the press.',
@@ -45,6 +46,65 @@ export function protocol(dir: string, rules: string): string {
     dir ? `The task folder is the source of truth: ${dir} (task.md, ledger.md). Read task.md there when you need the brief.` : 'The task folder appears when the brief is written.',
     rules ? `Project rules from earlier feedback (follow them):\n${rules}` : '',
   ].filter(Boolean).join('\n')
+}
+
+// ---------- free mode: talk and try, no brief, a summary of the ideas at the end ----------
+
+function freeProtocol(dir: string, rules: string): string {
+  return [
+    'Free mode («Свободный режим») is on. The person wants to think, discuss and try things with you, not to hand over one task. This replaces the two-touch flow until the person gives a new task or continues a paused one.',
+    '1. Work as a partner. Talk, offer 2 or 3 options with their trade-offs, ask a question whenever the answer changes what you do, build small quick prototypes and show them, change course when the person reacts. Several topics in one session are normal.',
+    '2. No brief, no criteria, no Start, no acceptance: do not call the task or submit tools until the person asks for the summary or for a strict task. Your authority stays as the board shows it.',
+    '3. Keep the ideas on the board with mcp__session-board__note: kind idea for each idea worth keeping (title, statement: what it is). Update it by id: status trying while you prototype it, kept when the person wants to keep it, dropped when it is rejected (statement says why). Record decisions and findings as usual.',
+    '4. Summary. When the person asks for it («Подвести итог»), give every idea its final status (kept, dropped with the reason, or open when you did not get to it), then call mcp__session-board__submit with summary_ru (what the session gave, 2 or 3 sentences), next, for_you and an empty criteria list. The board writes the summary and closes the free session.',
+    dir ? `The session folder: ${dir} (summary.md after the summary, ledger.md).` : '',
+    rules ? `Project rules from earlier feedback (follow them):\n${rules}` : '',
+  ].filter(Boolean).join('\n')
+}
+
+/** How the board shows an idea's status, in the order the screens list them. */
+export const IDEA: Record<string, { label: string; glyph: string }> = {
+  trying: { label: 'пробуем', glyph: '●' },
+  open: { label: 'идея', glyph: '○' },
+  kept: { label: 'оставили', glyph: '✓' },
+  dropped: { label: 'отбросили', glyph: '✗' },
+}
+
+export const ideasOf = (L: Ledger) => L.nodes.filter(n => n.kind === 'idea' && n.status !== 'superseded')
+
+/** The message the «Свободный режим» button sends. */
+export function freeMessage(t: TaskSpec, paused?: TaskSpec | null): string {
+  const a = AUTHORITY[t.authority]
+  return `Свободный режим. Задания, критериев и приёмки нет: обсуждаем, пробуем, переделываем. Работай как партнёр: предлагай 2–3 варианта, спрашивай, когда ответ что-то меняет, быстро пробуй и показывай. ` +
+    `Идеи веди на доске через note: kind idea; статус trying — пробуем, kept — оставили, dropped — отбросили (в statement_ru — почему). Тулы task и submit не вызывай, пока я не попрошу итог или строгую задачу. ` +
+    `Полномочия: ${a.label} — сам: ${a.alone.ru}; только со мной: ${a.withYou.ru}.${paused ? ` Задача «${paused.title.ru}» на паузе: не продолжай её, пока я к ней не вернусь.` : ''} Итог подведёшь, когда я скажу «Подвести итог».`
+}
+
+/** The message the «Подвести итог» button sends. */
+export const WRAP_ASK = 'Подведи итог свободной сессии: доведи каждую идею до статуса — оставили, отбросили (с причиной) или не дошли, — и сдай итог через submit с пустым списком criteria: summary_ru, next, for_you.'
+
+/** The summary of a free session: summary.md and the «Итог» screen. Before the summary, the ideas so far. */
+export function renderSummary(L: Ledger): string {
+  const t = L.task
+  const sub = t?.submitted
+  const ideas = ideasOf(L)
+  const line = (n: LedgerNode) => {
+    const url = n.evidence.find(e => /^https?:\/\//.test(e.ref))?.ref
+    return `- ${n.title.ru}${n.statement ? ` — ${n.statement.ru}` : ''}${url ? ` (${url})` : ''}`
+  }
+  const part = (title: string, lines: string[]) => (lines.length ? [`## ${title}`, '', ...lines, ''] : [])
+  const of = (...st: string[]) => ideas.filter(n => st.includes(n.status)).map(line)
+  return [
+    `# Итог: ${t?.title.ru ?? 'свободная сессия'}`, '',
+    sub ? `${sub.summary.ru}\n\n_${sub.at.slice(0, 16).replace('T', ' ')}_` : 'Итог ещё не подведён. Ниже — идеи на сейчас.', '',
+    ...part('Оставили', of('kept')),
+    ...part('Отбросили', of('dropped')),
+    ...part('Не решили', of('open', 'trying')),
+    ...part('Решения', L.nodes.filter(n => n.kind === 'decision' && live(n) && !n.tag).map(line)),
+    ...part('Дальше', (sub?.next ?? []).map(x => `- ${x}`)),
+    ...part('Нужно от тебя', (sub?.forYou ?? []).map(x => `- ${x}`)),
+    ideas.length ? '' : 'Идей на доске пока нет.',
+  ].join('\n').trim() + '\n'
 }
 
 // ---------- the task brief ----------
@@ -138,6 +198,14 @@ export function renderTaskMd(L: Ledger): string {
   const t = L.task
   if (!t) return ''
   const a = AUTHORITY[t.authority]
+  if (t.mode === 'free') {
+    return [
+      `# ${t.title.ru}`, '',
+      `_Свободный режим_ · фаза: ${t.phase} · создано ${t.created.slice(0, 16).replace('T', ' ')}`, '',
+      'Задания, критериев и приёмки нет. Итог — сводка идей в summary.md.', '',
+      `## Полномочия: ${a.label}`, '', `- Сам: ${a.alone.ru}`, `- Только с тобой: ${a.withYou.ru}`, '',
+    ].join('\n')
+  }
   const out: string[] = [
     `# ${t.title.ru}`,
     '',

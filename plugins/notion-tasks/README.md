@@ -30,7 +30,7 @@ decide, and writes `.claude/notion-tasks.json`:
 | `report` | The text property for the closing report, or null: then the report is a section at the end of the page. |
 | `type` | The select with options for follow-ups and bugs, or null. |
 | `priority` | The select and its options from high to low, or null. |
-| `require_ticket` | `true`: Claude changes files only for work that has a ticket. |
+| `require_ticket` | `true`: Claude changes files only for work that has a ticket (session-board's free mode excepted). |
 
 The file stays out of git (setup adds it to `.git/info/exclude`): each person binds their own board. Run setup again
 to change it, or edit the file.
@@ -63,6 +63,7 @@ The rules, in short:
 | Work | Each new ticket is a decision on the board with its link, so you see it at Acceptance. |
 | Hand-in | `review`, if the board has it. With lean, each skipped thing becomes a follow-up ticket. |
 | Accept | `done` and the report. «Принять с правками»: the ticket closes with the next hand-in. «Вернуть»: it stays in work. |
+| Free mode | No ticket needed. At the summary each kept idea that still needs work becomes a follow-up ticket. |
 
 ### With lean
 

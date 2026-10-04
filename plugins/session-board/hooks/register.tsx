@@ -7,8 +7,8 @@ import { deterministicOps, FILE_TOOLS, liveEvent, targetOf, toolLabel } from './
 import { applyOps, cleanBrief, emptyLedger, parseOp, renderBrief, renderMarkdown, txt, upsertTurn, type Op } from './ledger'
 import { renderReport, type ReportDiff } from './report'
 import {
-  AUTHORITY, briefOps, criteriaOf, emptyVerdict, isAuthority, parseTaskInput, protocol, renderTaskMd, ruleCandidates, slugify, startMessage,
-  VERDICT_LABEL, verdictLine, verdictMessage, type VerdictKind,
+  AUTHORITY, briefOps, criteriaOf, emptyVerdict, freeMessage, ideasOf, isAuthority, parseTaskInput, protocol, renderSummary, renderTaskMd, ruleCandidates,
+  slugify, startMessage, VERDICT_LABEL, verdictLine, verdictMessage, WRAP_ASK, type VerdictKind,
 } from './task'
 import { LADDER_MIN_WORDS, proseWords, RUNGS } from './ladder'
 import { DEBT_GREP, LEAN_LEVEL, leanLineLevel, parseDebt } from './lean'
@@ -196,7 +196,7 @@ async function refreshOpenTasks($: EngineInterface) {
     if (dir === cur || !(await $.fs.exists(`${dir}/ledger.json`)) || (await isTracked($, dir))) continue
     try {
       const saved = JSON.parse(await $.fs.read(`${dir}/ledger.json`)) as Ledger
-      if (saved.task && saved.task.phase !== 'accepted') out.push({ dir, title: saved.task.title.ru, phase: saved.task.phase, updated: saved.updated })
+      if (saved.task && saved.task.phase !== 'accepted') out.push({ dir, title: saved.task.title.ru, phase: saved.task.phase, updated: saved.updated, free: saved.task.mode === 'free' })
     } catch {
       // a broken ledger file: skip it
     }
@@ -232,10 +232,15 @@ async function push($: EngineInterface, text: string) {
   }
 }
 
-/** Send once: a second press of the same action waits until Claude has answered the first. */
+/**
+ * Send once: a second press of the same action waits until Claude has answered the first. The board's own prompt
+ * never reaches the board's prompt.submit hook (the engine skips the caller), so it counts as started at once and the
+ * end of the next turn clears it.
+ */
 async function sendOnce($: EngineInterface, key: string, text: string) {
+  // lean: a press during a running turn clears when that turn ends, before Claude answers it; keep the turn id if double sends show up
   if ((await read($, sent)).some(x => x.key === key)) return
-  await update($, sent, list => [...list, { key, text, started: false }])
+  await update($, sent, list => [...list, { key, text, started: true }])
   say($, text)
 }
 
@@ -459,6 +464,37 @@ async function startTask($: EngineInterface, send = true): Promise<string> {
   return msg
 }
 
+/**
+ * «Свободный режим»: the session goes on without a brief, criteria or acceptance. A running strict task pauses: it
+ * stays in its folder and waits under «Начатые задачи». Work that grew without a brief carries on as the free session.
+ */
+async function freeMode($: EngineInterface, send = true): Promise<string> {
+  const L0 = await read($, ledger)
+  const t0 = L0.task
+  if (t0?.mode === 'free' && t0.phase !== 'accepted') return ''
+  const fresh = !!t0?.formal
+  const paused = t0?.formal && t0.phase !== 'accepted' && t0.mode !== 'free' ? t0 : null
+  const at = await iso($)
+  const title = { en: 'Free session', ru: 'Свободная сессия' }
+  const t: TaskSpec = {
+    title, goal: { en: '', ru: '' }, result: { en: '', ru: '' }, outOfScope: [], materials: [],
+    authority: !fresh && t0 ? t0.authority : await read($, policy),
+    dir: !fresh && t0?.dir ? t0.dir : await newTaskDir($, title.en),
+    created: at, started: at, phase: 'work', round: 1, formal: true, mode: 'free',
+  }
+  const L = await update($, ledger, prev => ({ ...(fresh ? emptyLedger(prev.sid) : prev), task: t, updated: at }))
+  await persist($, L, [])
+  await update($, view, () => '')
+  await update($, verdict, () => emptyVerdict())
+  await update($, editing, () => '')
+  // the next prompt carries the free-mode protocol
+  await update($, greeted, () => '')
+  await refreshOpenTasks($)
+  const msg = freeMessage(t, paused)
+  if (send) await sendOnce($, 'free', msg)
+  return msg
+}
+
 async function setAuthority($: EngineInterface, level: Authority) {
   const t = (await read($, ledger)).task
   if (!t || t.phase === 'accepted') {
@@ -626,7 +662,8 @@ const SUBMIT_TOOL_DESCRIPTION =
   'Good result_ru: "Да: проверки на GitHub проходят, оба плагина устанавливаются." Bad: "CI run 37117211238: success on bb241e7". ' +
   'Put ids, commands, paths, run ids and numbers into evidence: the board hides evidence under a toggle. ' +
   'If the session has the lean rules ("lean is on"), first check your own work: review the task\'s diff for over-engineering as lean-review does and record each finding with the note tool (kind finding, tag cut: what to remove, what replaces it, file and line; also for parts the person asked for by name, saying so); make sure each new `lean:` comment in the diff has a note with tag shortcut. Only record: do not change the code for them, the person picks what to cut. Put the result in lean_check, one plain Russian line («Лишнего не нашёл», «Нашёл два места, они в списке»). ' +
-  'The board builds an HTML report and shows the person the Acceptance screen. After the call, end your turn and wait for one verdict.'
+  'The board builds an HTML report and shows the person the Acceptance screen. After the call, end your turn and wait for one verdict. ' +
+  'In free mode («Свободный режим») submit is the summary: give every idea its final status first, then summary_ru, next, for_you and an empty criteria list; there is no verdict.'
 
 // ---------- board actions: the same for every surface ----------
 
@@ -687,6 +724,8 @@ function boardActions($: EngineInterface): Actions {
     setAuthority: level => later(() => setAuthority($, level)),
     setCode: level => later(() => setCode($, level)),
     start: () => later(() => startTask($)),
+    freeMode: () => later(() => freeMode($)),
+    wrap: () => later(() => sendOnce($, 'wrap', WRAP_ASK)),
     addItem: (kind, text) => later(() => addItem($, kind, text)),
     stale: id => later(() => markStale($, id)),
     sendNotes: () => later(() => sendNotes($)),
@@ -731,9 +770,16 @@ async function askNext($: EngineInterface) {
   }
   const IN_CHAT = 'Напишу в чате'
   const LATER = 'Позже'
+  const FREE = 'Свободный режим'
   if (!t || t.phase === 'accepted') {
-    const x = await ask('Задания нет. Какую задачу поставить? Опишите её в «Other».', [IN_CHAT, LATER])
+    const x = await ask('Задания нет. Какую задачу поставить? Опишите её в «Other» или выберите свободный режим.', [IN_CHAT, FREE, LATER])
+    if (x === FREE) return void (await freeMode($))
     if (x && x !== IN_CHAT && x !== LATER) await sendOnce($, 'intake', `Новая задача: ${x}`)
+    return
+  }
+  if (t.mode === 'free' && !waitingQuestions(L).length) {
+    const x = await ask(`Свободный режим, идей на доске: ${ideasOf(L).length}. Подвести итог?`, ['Подвести итог', LATER])
+    if (x === 'Подвести итог') await sendOnce($, 'wrap', WRAP_ASK)
     return
   }
   if (t.phase === 'intake') {
@@ -865,19 +911,20 @@ export const register: Register = (on, options) => {
       name: 'note',
       description:
         'Record one item in the session ledger at once: a decision you took yourself (it goes to the acceptance list), an assumption, a finding with evidence, an open question for the user, a constraint the user stated, or a dead end. Give an existing id to update that item instead (for example mark a step done or a criterion proven with evidence). ' +
+        'In free mode, kind idea keeps an idea thread: status open, trying, kept or dropped (a dropped idea says why in statement). ' +
         'With the lean rules, tag what you did not build (decision, tag skipped), a `lean:` shortcut (decision, tag shortcut) and an over-engineering finding (finding, tag cut): the person sees them under «Не построено».',
       inputSchema: {
         type: 'object',
         required: ['title'],
         properties: {
           id: { type: 'string', description: 'An existing node id to update instead of adding (status, title, statement, parent, evidence)' },
-          kind: { type: 'string', enum: ['goal', 'constraint', 'question', 'hypothesis', 'task', 'finding', 'decision', 'open', 'assumption', 'risk'] },
+          kind: { type: 'string', enum: ['goal', 'constraint', 'question', 'hypothesis', 'task', 'finding', 'decision', 'open', 'assumption', 'risk', 'idea'] },
           title: { type: 'string', description: '10 words or fewer, plain English' },
           title_ru: { type: 'string', description: 'The same title in plain Russian' },
           statement: { type: 'string', description: 'One sentence, 25 words or fewer' },
           statement_ru: { type: 'string' },
           parent: { type: 'string', description: 'Parent node id, if any' },
-          status: { type: 'string', description: 'For example done, refuted, accepted, proven' },
+          status: { type: 'string', description: 'For example done, refuted, accepted, proven; an idea: open, trying, kept or dropped' },
           evidence: { type: 'array', items: { type: 'string' }, description: 'file:line, command, test or URL' },
           tag: { type: 'string', enum: ['skipped', 'shortcut', 'cut'], description: 'lean items only: skipped (not built), shortcut (a lean: comment), cut (over-engineering to remove)' },
         },
@@ -993,16 +1040,15 @@ export const register: Register = (on, options) => {
     const fromBoard = e.origin?.kind === 'plugin'
     // «Старт», «Принять», «Вернуть: …» typed in the chat (a phone has no board buttons) press the button, and the
     // message Claude gets is the one the button would send, not a second one
-    const word = fromPerson ? parseChatCommand(e.text, L.task?.phase) : null
+    const word = fromPerson ? parseChatCommand(e.text, L.task?.phase, L.task?.mode === 'free') : null
     let text = e.text
-    if (word) {
-      if (word.kind === 'start') text = (await startTask($, false)) || text
-      else {
-        if (word.kind !== 'accept') await update($, verdict, v => ({ ...v, general: [...v.general, word.remark] }))
-        text = (await sendVerdict($, word.kind, false)) || text
-      }
+    if (word?.kind === 'start') text = (await startTask($, false)) || text
+    else if (word?.kind === 'free') text = (await freeMode($, false)) || text
+    else if (word?.kind === 'wrap') text = WRAP_ASK
+    else if (word) {
+      if (word.kind !== 'accept') await update($, verdict, v => ({ ...v, general: [...v.general, word.remark] }))
+      text = (await sendVerdict($, word.kind, false)) || text
     }
-    if (fromBoard) await update($, sent, list => list.map(x => (x.text === e.text ? { ...x, started: true } : x)))
     if (fromPerson) await findLean($).catch(() => undefined)
     // The person wrote in the chat: their message probably answers the open questions. Take the cards down now;
     // the cartographer marks each one answered, or opens it again when the message did not answer it.
@@ -1014,7 +1060,9 @@ export const register: Register = (on, options) => {
     // what Claude reads beside the prompt and the person never sees: the protocol once a session, the board notes
     const extra: string[] = []
     if (sessionId && (await read($, greeted)) !== sessionId) {
-      extra.push(protocol(L.task?.dir ?? '', projectRules))
+      // read again: a chat word may have just switched the mode
+      const t = (await read($, ledger)).task
+      extra.push(protocol(t?.dir ?? '', projectRules, t?.mode === 'free'))
       await update($, greeted, () => sessionId)
     }
     const queued = await read($, notes)
@@ -1058,10 +1106,10 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const r = await next(e)
     if (!e.agentId) await update($, ladder, () => e.reason === 'answer' && !e.isAborted && proseWords(e.answer) >= LADDER_MIN_WORDS)
+    if (!e.agentId) await update($, sent, list => list.filter(x => !x.started))
     if (e.agentId || !current) return r
     const c = current
     current = null
-    await update($, sent, list => list.filter(x => !x.started))
     const toolCount = Object.values(c.tools).reduce((s, v) => s + v, 0)
     const ask = c.ask.replace(/\s+/g, ' ').slice(0, 240)
     const card: TurnCard = {
@@ -1114,7 +1162,7 @@ export const register: Register = (on, options) => {
     // the brief rides in the compacted conversation itself: a session.append from a timer
     // never reached the compacted conversation (K4, 2026-10-03)
     if (result.messages.at(-1)?.text.startsWith('<session-ledger')) return result
-    const text = `${renderBrief(L)}\n\n${protocol(L.task?.dir ?? '', projectRules)}`
+    const text = `${renderBrief(L)}\n\n${protocol(L.task?.dir ?? '', projectRules, L.task?.mode === 'free')}`
     return { ...result, messages: [...result.messages, { role: 'user' as const, text, toolUses: [] }] }
   })
 
@@ -1201,8 +1249,8 @@ export const register: Register = (on, options) => {
     // a brief with another title while the task waits for acceptance is a new task, not an amend: amending would
     // supersede the handed-in criteria (2026-10-04). The old task keeps its folder and waits under "open tasks".
     const waiting = L.task?.phase === 'review' && L.task.title.en.trim() !== input.title.en.trim() ? L.task : null
-    if (L.task?.phase === 'accepted' || waiting) {
-      // a new task after an accepted one starts a fresh ledger; the old one stays in its folder
+    if (L.task?.phase === 'accepted' || waiting || L.task?.mode === 'free') {
+      // a new task after an accepted one, or out of free mode, starts a fresh ledger; the old one stays in its folder
       L = await update($, ledger, prev => ({ ...emptyLedger(prev.sid), updated: at }))
       await update($, verdict, () => emptyVerdict())
     }
@@ -1244,6 +1292,16 @@ export const register: Register = (on, options) => {
     if (!t) return reply('Not handed in: there is no task. Write the brief with the task tool first.')
     const summary = txt(typeof raw.summary === 'string' && typeof raw.summary_ru === 'string' ? { en: raw.summary, ru: raw.summary_ru } : raw.summary_ru ?? raw.summary, 1200)
     if (!summary) return reply('Not handed in: summary_ru is required.')
+    if (t.mode === 'free') {
+      // free mode: no criteria and no acceptance; the summary closes the session
+      const sub: Submission = { at: await iso($), round: 1, summary, forYou: strs(raw.for_you), verify: strs(raw.verify), notDone: strs(raw.not_done), next: strs(raw.next) }
+      const L2 = await setTask($, x => ({ ...x, submitted: sub, phase: 'accepted' }))
+      if (t.dir) await $.fs.write(`${t.dir}/summary.md`, renderSummary(L2))
+      openBoard($)
+      $.ui.toast('Итог подведён')
+      await push($, `Итог готов: «${t.title.ru}». Наберите /board.`)
+      return reply(`Summary recorded${t.dir ? ` in ${t.dir}/summary.md` : ''}; the free session is closed. End your turn now.`)
+    }
     const crit = criteriaOf(L)
     const items = (Array.isArray(raw.criteria) ? raw.criteria : []).filter(isObj)
     const ops: Op[] = []
@@ -1301,7 +1359,7 @@ export const register: Register = (on, options) => {
       verdict: v === 'review' ? await read($, verdict) : emptyVerdict(),
       notes: await read($, notes),
       editing: await read($, editing),
-      openTasks: v === 'task' && !L.task ? await read($, openTasks) : [],
+      openTasks: v === 'task' && (!L.task || L.task.mode === 'free') ? await read($, openTasks) : [],
       policy: await read($, policy),
       lean: await read($, lean),
       debt: v === 'task' ? await read($, debt) : null,
@@ -1358,6 +1416,9 @@ export const register: Register = (on, options) => {
       },
       accept: () => {
         sendVerdict($, 'accept').catch((err: unknown) => $.ui.toast(`Доска: ${String((err as Error)?.message ?? err).slice(0, 80)}`))
+      },
+      wrap: () => {
+        sendOnce($, 'wrap', WRAP_ASK).catch(() => undefined)
       },
       rung: text => {
         void update($, ladder, () => false)

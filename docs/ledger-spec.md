@@ -25,6 +25,7 @@ Source of types: [`plugins/session-board/types/index.d.ts`](../plugins/session-b
 | assumption | S | open, verified, invalid |
 | risk | R | open, lifted |
 | criterion ("done when" from the task brief) | K | todo, proven, failed |
+| idea (free mode) | I | open, trying, kept, dropped (a dropped idea says why in `statement`) |
 
 Any node may be `stale`: the person marked it outdated on the board; the cartographer rewrites or closes it.
 A decision the person rejects at review becomes `disputed`.
