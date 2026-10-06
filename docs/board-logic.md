@@ -157,6 +157,10 @@ project is bound to a board, tell Claude what to do at each board message.
 | Acceptance | «Приёмка …: принято» (or the next `submit` after «принято с правками») → the done status and the closing report in the ticket. «вернуть на доработку» keeps the start status. |
 | Free mode | No ticket, no status, no report. At the summary each kept idea that still needs work becomes a follow-up ticket; its URL goes into the idea's evidence, so the summary shows it. |
 
+[obsidian-tasks](../plugins/obsidian-tasks) gives the same steps for a board in an Obsidian vault: the first rule is
+`Obsidian ticket: <path> (obsidian://…)`, the status is a Kanban lane or a note property, and the report is a section
+at the end of the ticket note.
+
 ## Files: the folder is the source of truth
 
 ```

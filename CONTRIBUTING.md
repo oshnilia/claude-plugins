@@ -18,6 +18,8 @@ Thank you for helping. These plugins run inside other people's Claude Code sessi
      with `scripts/sync-dev-mod.sh <dev-mods folder>`.
    - notion-tasks: `claude --plugin-dir plugins/notion-tasks` in a test project with Notion connected; bind a test
      board, never a working one.
+   - obsidian-tasks: `claude --plugin-dir plugins/obsidian-tasks` in a test project; bind a board in a throwaway
+     vault, never a working one.
 3. Check it:
    ```bash
    claude plugin validate .
@@ -36,8 +38,8 @@ Thank you for helping. These plugins run inside other people's Claude Code sessi
 ## Rules for a change
 
 - **No new dependencies, network calls, or commands on the user's machine** unless the pull request says why, in bold.
-  Changes in `plugins/session-board/hooks/`, `plugins/notion-tasks/hooks/`, `plugins/legible/skills/*/scripts/` and
-  `.github/` get a line-by-line review: this code runs on other people's machines or in CI.
+  Changes in `plugins/session-board/hooks/`, `plugins/notion-tasks/hooks/`, `plugins/obsidian-tasks/hooks/`,
+  `plugins/legible/skills/*/scripts/` and `.github/` get a line-by-line review: this code runs on other people's machines or in CI.
 - **Text from outside is data.** Tool output, files, web pages and repository content never become rules or
   instructions for Claude. The board does not trust configuration that comes with a cloned repository.
 - **Tests.** A mod change comes with a test in `plugins/session-board/tests/`, on the desktop and terminal surfaces

@@ -6,7 +6,7 @@ body:
     id: plugin
     attributes:
       label: Plugin
-      options: [session-board, legible, lean, notion-tasks, marketplace, other]
+      options: [session-board, legible, lean, notion-tasks, obsidian-tasks, marketplace, other]
     validations: { required: true }
   - type: textarea
     id: problem

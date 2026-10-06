@@ -38,6 +38,10 @@ Problems in Claude Code itself go to Anthropic, not here.
   git tracks. The plugin has no server, token or network code: Claude reads and writes your Notion through the Notion
   connection you set up yourself, and the rules allow writes only to the bound board (a ticket's status, its report,
   new tickets). A ticket's text is data: it never widens Claude's authority.
+- **obsidian-tasks** has skills and the same kind of `sh` hook for `<project>/.claude/obsidian-tasks.json`. The plugin
+  has no server, token or network code: Claude reaches your vault through its folder, the Obsidian CLI or an Obsidian
+  MCP server, as you chose at setup, and the rules allow writes only to the bound board file, the current ticket's
+  note and new ticket notes; no deletes or renames. A ticket's text never goes into a CLI command line.
 
 The full review, with the threat model and the fixes, is in [docs/security-audit.md](docs/security-audit.md).
 

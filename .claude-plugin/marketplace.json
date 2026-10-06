@@ -31,6 +31,13 @@
       "description": "Run a project's work through your own Notion task board: take a ticket, keep its status, write the closing report, file follow-ups. Works with any Notion connection; with session-board the ticket becomes the brief and Acceptance closes it.",
       "category": "productivity",
       "tags": ["notion", "tasks", "tickets", "session-board"]
+    },
+    {
+      "name": "obsidian-tasks",
+      "source": "./plugins/obsidian-tasks",
+      "description": "Run a project's work through the roadmap board in your Obsidian vault (Kanban plugin or Bases): take a ticket, keep its status, write the closing report, file follow-ups. You choose the access at setup: the vault folder, the Obsidian CLI or your Obsidian MCP server.",
+      "category": "productivity",
+      "tags": ["obsidian", "kanban", "bases", "tasks", "tickets", "session-board"]
     }
   ]
 }
