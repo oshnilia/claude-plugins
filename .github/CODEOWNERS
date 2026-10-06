@@ -3,5 +3,6 @@
 *                                  @oshnilia
 /plugins/session-board/hooks/      @oshnilia
 /plugins/notion-tasks/hooks/       @oshnilia
+/plugins/obsidian-tasks/hooks/     @oshnilia
 /plugins/legible/skills/*/scripts/ @oshnilia
 /.github/                          @oshnilia

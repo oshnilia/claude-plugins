@@ -2,6 +2,20 @@
 
 Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
+## obsidian-tasks
+
+### 0.1.0 — 2026-10-06
+
+- New plugin: the roadmap board in your Obsidian vault as the list of work, built like notion-tasks. A board is a
+  Kanban plugin file (the status is the card's lane) or a Bases `.base` file (the status is a note property); a
+  ticket is a note, and the report goes at its end.
+- `/obsidian-tasks:setup` finds your vaults and boards or creates a board, reads the lanes or status values, and asks
+  how Claude reaches the vault: the folder (default), the official Obsidian CLI or an Obsidian MCP server you set up.
+  It can allow the vault folder in `.claude/settings.local.json`. The binding `.claude/obsidian-tasks.json` stays out
+  of git; a binding that git tracks is refused.
+- `/obsidian-tasks:take` turns a ticket into the brief; a Kanban card without a note gets one. With session-board and
+  lean it works as notion-tasks does.
+
 ## notion-tasks
 
 ### 0.2.0 — 2026-10-04
