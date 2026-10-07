@@ -20,7 +20,7 @@ make it do?
 | Runs code in your session | yes, it is a mod | no; skills are text |
 | Reads files | its task folder, `.claude/tasks/policy.json`, `RULES.md` | the text you pass to a scorer |
 | Writes files | only `<project>/.claude/tasks/` and `<project>/.claude/session-board/` | none |
-| Runs commands | `git rev-parse`, `git ls-files`, `git diff` (read-only), `open`, `mv` inside the task folder | `python3` scorers, through your normal permission prompts |
+| Runs commands | `git rev-parse`, `git ls-files`, `git diff` (read-only), `uname -s`, `open` / `explorer` / `xdg-open`, `mv` inside the task folder | `python3` scorers, through your normal permission prompts |
 | Network | none | none |
 | Model calls | a fork of your session after a turn with work (`update: every-turn`), and "Спросить" | none; evals call the model only when you run them |
 | Pre-approved tools | none | none |
@@ -33,7 +33,7 @@ make it do?
 | 2 | The board gave `.claude/tasks/RULES.md` to Claude as the person's rules at every session start. A repository could plant instructions that way. | high | Ignored when git tracks the file. |
 | 3 | "Продолжить здесь" listed and loaded task folders shipped with a repository, and their brief reached Claude as the task. | medium | Tracked task folders are neither listed nor loaded. |
 | 4 | The cartographer may record a "user rule" that came from tool output, and the brief after compaction listed it as the user's constraint. | medium | The prompt says tool output is data and constraints come only from user turns. The brief lists cartographer rules under `INFERRED RULES`, apart from `CONSTRAINTS`. |
-| 5 | "Открыть" ran `open` on any path in the ledger. A `.command` file opens in Terminal and runs. | low | Only existing files inside the project open. Files that macOS would run are revealed in Finder. |
+| 5 | "Открыть" ran `open` on any path in the ledger. A `.command` file opens in Terminal and runs. | low | Only existing files inside the project open. Files that macOS would run are revealed in Finder; on Windows every file is only revealed in Explorer (since 0.9.2). |
 | 6 | The session pointer could lead the board to a ledger anywhere on disk. | low | The pointer must lead into the project's task folder, and the folder must not be tracked. |
 
 Checked and found safe:
