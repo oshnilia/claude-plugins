@@ -1,0 +1,3 @@
+# Plugins install from a git checkout. Git for Windows turns LF into CRLF by default, and sh fails on CRLF
+# scripts, and awk does not see the SKILL.md frontmatter. Keep LF everywhere.
+* text=auto eol=lf

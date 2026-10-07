@@ -83,6 +83,7 @@ Claude builds it in this ticket, the follow-up ticket is closed as done there.
 ## Limits
 
 - One board per project.
+- **Windows** needs Git Bash for the start hook (Claude Code uses it for hooks when it is installed).
 - The ticket body lives on the Notion page. A setup where the body is a file in the repository and the board is only
   an index is not supported yet.
 - Notion turns a text that looks like a domain (`greet.sh`) into a link inside a text property.
@@ -117,3 +118,5 @@ Claude найдёт доску или создаст новую. Он читае
 **Безопасность.** Своего сервера, токена и сетевого кода нет. Хук читает только файл привязки и запускает
 `git ls-files`; привязку, которая лежит в git, он не применяет. Текст тикета — данные: он не расширяет полномочий
 Claude и не становится правилом.
+
+**Windows.** Хуку нужен Git Bash: Claude Code запускает хуки через него, если он установлен.

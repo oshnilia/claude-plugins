@@ -5,13 +5,17 @@ const isObj = (x: unknown): x is Record<string, unknown> => typeof x === 'object
 
 const short = (s: string, n = 70) => (s.length > n ? `${s.slice(0, n - 1)}…` : s)
 
-const home = /^\/Users\/[^/]+\//
+/** A path as the board compares it: forward slashes and an upper-case drive letter, as Windows gives either. */
+export const slashed = (p: string) => p.replace(/\\/g, '/').replace(/^[a-z]:/, d => d.toUpperCase())
+
+/** The person's home folder at the start of a slashed path, on macOS, Linux and Windows: it holds their user name. */
+export const home = /^(?:\/Users|\/home|[A-Z]:\/Users)\/[^/]+\//
 
 /** A short human label for what a tool call worked on. */
 export function targetOf(tool: string, input: Record<string, unknown>): string {
   const pick = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : '')
   const path = pick('file_path') || pick('notebook_path') || pick('path')
-  if (path) return short(path.replace(home, '~/'), 80)
+  if (path) return short(slashed(path).replace(home, '~/'), 80)
   if (tool === 'Bash') return short(pick('description') || (pick('command').split('\n')[0] ?? ''))
   if (pick('pattern')) return short(pick('pattern'))
   if (pick('url')) return short(pick('url'))

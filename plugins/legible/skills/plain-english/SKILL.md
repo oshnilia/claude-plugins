@@ -54,7 +54,8 @@ what it reports:
 python3 "${CLAUDE_SKILL_DIR}/scripts/ste_score.py" --level 80 draft.md
 ```
 
-Use `-` for stdin and `--json` for machine output. Then end with one line: `plain-80: 92%`.
+Use `-` for stdin and `--json` for machine output. On Windows, when `python3` is not found, use `python` or `py -3`.
+Then end with one line: `plain-80: 92%`.
 
 When there is no shell tool, do not try to run the scorer in any other way, do not start a subagent for it, and say
 nothing about it. Give no number. The scorer checks only sentence structure. It cannot check words.
