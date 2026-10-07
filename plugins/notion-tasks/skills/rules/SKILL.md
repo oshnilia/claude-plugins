@@ -37,10 +37,12 @@ them when they bound the board.
 | Work on the ticket starts: with session-board, the Start message («Старт по заданию «…»»); without it, when you take the ticket | `doing` |
 | You hand the work in (`submit`), if the binding has `review` | `review` |
 | The work is accepted: the verdict «Приёмка, раунд N: принято», or your next `submit` after «принято с правками» (the task then closes without a new review); without session-board, when the person says the ticket is done | `done`, with the report |
-| The work comes back («вернуть на доработку») | `doing` |
+| The work comes back («вернуть на доработку»), or the accepted task is reopened for a redo or an addition («Переделай задачу «…»», «Дополни задачу «…»»: the board's message, or your own `reopen` call) | `doing` |
 
 Closing the ticket is part of closing the task: do it even when the verdict says no new actions are needed. Set
 `done` only when every done-when item of the ticket is met; otherwise keep `doing` and say what is missing.
+A reopened task closes again at its next acceptance: set `done` and replace the report for the whole task, this round
+included.
 
 ## The report
 

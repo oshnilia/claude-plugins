@@ -13,11 +13,13 @@ export type ChatCommand =
   | { kind: 'wrap' }
   | { kind: 'accept' }
   | { kind: 'return' | 'fixes'; remark: string }
+  | { kind: 'redo' | 'extend'; remark: string }
 
 const START = /^\s*(старт|start|начинай|поехали)\s*[.!]*\s*$/i
 const ACCEPT = /^\s*(принять|принимаю|принято|accept)(\s+работу)?\s*[.!]*\s*$/i
 const FIXES = /^\s*(принять\s+с\s+правками|с\s+правками)\s*[:—–-]\s*([\s\S]+)$/i
-const RETURN = /^\s*(вернуть|верни|на\s+доработку|return)\s*[:—–-]\s*([\s\S]+)$/i
+const RETURN = /^\s*(вернуть|верни|на\s+доработку|переделать|переделай|return)\s*[:—–-]\s*([\s\S]+)$/i
+const EXTEND = /^\s*(дополнить|дополни|доп\.?\s+задача)\s*[:—–-]\s*([\s\S]+)$/i
 const FREE = /^\s*(свободный\s+режим|free\s+mode)\s*[.!]*\s*$/i
 const WRAP = /^\s*(подвести\s+итог|подведи\s+итог|итог)\s*[.!]*\s*$/i
 
@@ -27,6 +29,12 @@ export function parseChatCommand(text: string, phase: Phase | undefined, free = 
   if (!freeWork && FREE.test(text)) return { kind: 'free' }
   if (freeWork && WRAP.test(text)) return { kind: 'wrap' }
   if (phase === 'intake' && START.test(text)) return { kind: 'start' }
+  if (phase === 'accepted' && !free) {
+    // after acceptance «Вернуть: …» and «Переделать: …» reopen the same task
+    const e = EXTEND.exec(text)
+    const m = e ?? RETURN.exec(text)
+    return m ? { kind: e ? 'extend' : 'redo', remark: m[2]!.trim() } : null
+  }
   if (phase !== 'review') return null
   if (ACCEPT.test(text)) return { kind: 'accept' }
   const f = FIXES.exec(text)
@@ -81,7 +89,8 @@ export function boardText(L: Ledger): string {
   }
   const hint = t.phase === 'intake' ? 'Ответьте «Старт», чтобы начать, или напишите, что поправить.'
     : t.phase === 'review' ? 'Ответьте «Принять» или «Вернуть: что поправить».'
-      : qs.length ? 'Ответьте на вопрос обычным сообщением.' : ''
+      : t.phase === 'accepted' ? 'Дальше: «Переделать: что не так», «Дополнить: что добавить» или опишите новую задачу.'
+        : qs.length ? 'Ответьте на вопрос обычным сообщением.' : ''
   if (hint) out.push('', hint)
   return out.join('\n')
 }

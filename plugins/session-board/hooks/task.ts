@@ -43,6 +43,7 @@ export function protocol(dir: string, rules: string, free = false): string {
     '2. Work. After Start, work on your own. Ask the person only for a blocker: an action outside your authority, a fork that is costly to undo and that the brief does not decide, or no way to continue. For any other choice, take the sensible default, record it with mcp__session-board__note (kind decision with status accepted, or kind assumption), and go on. Mark plan steps done when you finish them.',
     '3. Hand-in. When the work is done, check every criterion yourself and collect evidence: a test, a command and its output, file:line, a URL. Then call mcp__session-board__submit and stop. Do not ask the person to check what you can check yourself.',
     '4. Feedback. The person answers with one verdict message: accept, accept with fixes, or return. Apply all of it in one pass, then hand in again unless the task is accepted.',
+    '5. After acceptance. The person\'s next message is one of three: a redo of the accepted task, an extension of it (one more done-when item), or the next, separate task. For a redo or an extension, call mcp__session-board__reopen (kind redo or extend, text in Russian): the same task goes back to work for a new round, without Start; do the work and hand in with submit. For a separate task, do the intake as usual; when it builds on the accepted task, put that task\'s folder into materials. The board buttons «Переделать» and «Дополнить» and the chat words «Переделать: …», «Дополнить: …» reopen the task themselves and send you the message.',
     dir ? `The task folder is the source of truth: ${dir} (task.md, ledger.md). Read task.md there when you need the brief.` : 'The task folder appears when the brief is written.',
     rules ? `Project rules from earlier feedback (follow them):\n${rules}` : '',
   ].filter(Boolean).join('\n')
@@ -279,6 +280,19 @@ export function verdictMessage(kind: VerdictKind, L: Ledger, v: Verdict): string
 }
 
 export const emptyVerdict = (): Verdict => ({ marks: {}, comments: {}, general: [], rules: [] })
+
+// ---------- after acceptance: the same task back to work, without Start ----------
+
+export type ReopenKind = 'redo' | 'extend'
+
+export const REOPEN_LABEL: Record<ReopenKind, string> = { redo: 'переделать', extend: 'дополнить' }
+
+/** The message «Переделать» and «Дополнить» send; `t` is the reopened task, `crit` the new criterion's id. */
+export function reopenMessage(t: TaskSpec, kind: ReopenKind, text: string, crit?: string): string {
+  return kind === 'redo'
+    ? `Переделай задачу «${t.title.ru}», раунд ${t.round}: ${text}. Задача снова в работе, «Старт» не нужен. Исправь одним заходом, проверь все критерии и сдай через submit.`
+    : `Дополни задачу «${t.title.ru}», раунд ${t.round}: ${text}. Это новый пункт ${crit} «готово, когда». Задача снова в работе, «Старт» не нужен. Сделай, проверь все критерии и сдай через submit.`
+}
 
 /** Texts the person can turn into project rules: their comments and general remarks. */
 export function ruleCandidates(v: Verdict): string[] {
