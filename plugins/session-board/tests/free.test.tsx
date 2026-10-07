@@ -19,8 +19,8 @@ const idea = (input: Record<string, unknown>) => ({ tool: 'mcp__session-board__n
 const task = async ($: { tool: { call: (x: never) => Promise<{ text?: string }> } }) =>
   (await $.tool.call({ tool: 'mcp__session-board__ledger_read', section: 'task' } as never)).text ?? ''
 
-/** A project folder in memory (git answers "not a repository"), and the prompts Claude gets with their context. */
-function project(on: On) {
+/** A project folder in memory (git answers "not a repository" unless `git` answers), and the prompts Claude gets with their context. */
+function project(on: On, git?: (argv: readonly string[]) => { exitCode: number; stdout: string } | undefined) {
   const files = new Map<string, string>()
   const prompts: { text: string; context: string }[] = []
   mock.clock(on, { now: Date.parse('2026-10-04T10:00:00Z') })
@@ -47,7 +47,7 @@ function project(on: On) {
     }
     return { value: [...names].map(([name, kind]) => ({ name, kind })) } as never
   })
-  on('process.run', async () => ({ value: { exitCode: 1, stdout: '', stderr: 'not a git repository' } }) as never)
+  on('process.run', async (_$, e) => ({ value: { stderr: '', ...(git?.(e.argv) ?? { exitCode: 1, stdout: '', stderr: 'not a git repository' }) } }) as never)
   on('prompt.submit', async (_$, e) => {
     prompts.push({ text: e.text, context: (e.context ?? []).join('\n') })
     return { text: e.text }
@@ -170,4 +170,21 @@ test('from a phone: «Свободный режим» and «Итог» in the ch
   // «Итог» outside free mode is a plain message
   await $.prompt.submit({ text: 'Итог', origin: BRIDGE })
   expect(p.prompts.at(-1)!.text).toBe('Итог')
+})
+
+test('a policy that git tracks behind a symlinked .claude is refused, and the session pointer stays out of git', async ($, on) => {
+  // git asked from .claude/tasks itself (a symlink or a submodule) knows the file; asked from the project it does not
+  const p = project(on, argv => (argv.join(' ') === 'git -C /proj/.claude/tasks ls-files -- policy.json' ? { exitCode: 0, stdout: 'policy.json\n' } : undefined))
+  p.files.set('/proj/.claude/tasks/policy.json', JSON.stringify({ authority: 'bold' }))
+  const toasts: string[] = []
+  on('ui.toast', async (_$, e) => {
+    toasts.push(e.text)
+    return { value: undefined }
+  })
+  await $.session.start({ cwd: '/proj', surface: null, isInteractive: false })
+  expect(toasts.join('\n')).toContain('не применяет policy.json')
+
+  await $.tool.call(BRIEF)
+  expect(p.files.get('/proj/.claude/session-board/.gitignore')).toContain('*')
+  expect(p.files.get('/proj/.claude/session-board/free-session/task.json')).toContain('/proj/.claude/tasks/')
 })

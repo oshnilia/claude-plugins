@@ -26,4 +26,9 @@ out=$(run)
 echo "$out" | grep -q 'is in the repository, so it is ignored' || fail "a tracked binding must be refused"
 echo "$out" | grep -q 'Test board' && fail "a tracked binding must not reach the context"
 
+# A repository can ship .claude as a symlink to a tracked folder: the binding is tracked all the same.
+git -C "$tmp" rm -q --cached .claude/obsidian-tasks.json
+mv "$tmp/.claude" "$tmp/shipped" && ln -s shipped "$tmp/.claude" && git -C "$tmp" add shipped .claude
+run | grep -q 'is in the repository, so it is ignored' || fail "a binding behind a symlinked .claude must be refused"
+
 echo "obsidian-tasks hook: ok"

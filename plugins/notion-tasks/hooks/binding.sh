@@ -4,8 +4,9 @@
 dir="${CLAUDE_PROJECT_DIR:-.}"
 file=.claude/notion-tasks.json
 [ -f "$dir/$file" ] || exit 0
-# A binding that git tracks came with the repository, not from this person's setup: do not trust it.
-if git -C "$dir" ls-files --error-unmatch "$file" >/dev/null 2>&1; then
+# A binding that git tracks came with the repository, not from this person's setup: do not trust it. Git is asked
+# from .claude itself: through a symlinked or submodule .claude the project repository sees nothing tracked.
+if git -C "$dir/.claude" ls-files --error-unmatch "${file#.claude/}" >/dev/null 2>&1; then
   echo "notion-tasks: $file is in the repository, so it is ignored. To bind your own board, run /notion-tasks:setup."
   exit 0
 fi

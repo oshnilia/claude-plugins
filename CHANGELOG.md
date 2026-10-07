@@ -4,6 +4,11 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
 ## obsidian-tasks
 
+### 0.1.4 — 2026-10-07
+
+- Security: a binding that a repository ships behind a symlinked or submodule `.claude` folder is refused too. Before,
+  git was asked from the project folder, saw nothing tracked there, and the hook loaded the binding.
+
 ### 0.1.3 — 2026-10-07
 
 - Windows: the repository keeps LF line ends (`.gitattributes`). Git for Windows checks files out with CRLF by
@@ -27,6 +32,11 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
   lean it works as notion-tasks does.
 
 ## notion-tasks
+
+### 0.2.4 — 2026-10-07
+
+- Security: a binding that a repository ships behind a symlinked or submodule `.claude` folder is refused too. Before,
+  git was asked from the project folder, saw nothing tracked there, and the hook loaded the binding.
 
 ### 0.2.3 — 2026-10-07
 
@@ -56,6 +66,13 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 - A binding that git tracks is refused; a ticket's text never widens Claude's authority.
 
 ## session-board
+
+### 0.9.3 — 2026-10-07
+
+- Security: `policy.json`, `RULES.md` and task folders that a repository ships behind a symlinked or submodule
+  `.claude` folder are refused too. Before, a plain `git clone` of such a project could raise Claude's authority to
+  bold and give Claude its rules as yours.
+- `.claude/session-board/` gets its own `.gitignore`: the session pointers there hold your local paths.
 
 ### 0.9.2 — 2026-10-07
 

@@ -73,11 +73,14 @@ const tasksRoot = () => (root ? `${root}/.claude/tasks` : '')
  * True when git tracks the path: then it came with the repository, not from the person at this machine.
  * Board policy, rules and task folders from a repository are never trusted: a cloned project could raise
  * Claude's authority or plant "rules" that way. Without git nothing can be tracked.
+ * Git is asked from the path's own folder: through a symlinked or submodule `.claude` the root repository sees
+ * nothing tracked, while the folder's own repository does.
  */
 async function isTracked($: EngineInterface, path: string): Promise<boolean> {
   if (!root) return false
   try {
-    const r = await $.process.run(['git', '-C', root, 'ls-files', '--', path])
+    const cut = path.lastIndexOf('/')
+    const r = await $.process.run(['git', '-C', path.slice(0, cut), 'ls-files', '--', path.slice(cut + 1)])
     return r.exitCode === 0 && r.stdout.trim().length > 0
   } catch {
     return false
@@ -138,6 +141,9 @@ async function persist($: EngineInterface, L: Ledger, newOps: Op[]) {
   }
   // a pointer from this session to its task, so a resumed session finds the folder again
   if (root && sessionId && pointerFor !== dir) {
+    // the pointer holds an absolute path with the person's user name: keep it out of git like the task folders
+    const own = `${root}/.claude/session-board`
+    if (!(await $.fs.exists(`${own}/.gitignore`))) await $.fs.write(`${own}/.gitignore`, '# session-board pointers hold local paths and stay out of git.\n*\n')
     await $.fs.write(`${root}/.claude/session-board/${sessionId}/task.json`, JSON.stringify({ dir }, null, 2))
     pointerFor = dir
   }

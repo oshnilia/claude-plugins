@@ -23,11 +23,12 @@ jobs:
         run: for d in plugins/*/; do claude plugin validate "$d" || exit 1; done
       - name: No variable may shadow the JSX factory h
         run: "! grep -nE '(\\(|,|\\s)h\\s*=>|\\b(const|let|var) h\\b' plugins/session-board/hooks/*.tsx"
-      - name: No personal paths or email addresses in shipped files
+      - name: No personal paths or email addresses in the repository
         run: |
+          # Every tracked file: the docs, README and CHANGELOG are public too, not only what a plugin ships.
           # -o checks each match on its own, so an allowed address does not hide another one on the same line.
           # example.com/.org/.net are reserved for examples (RFC 2606) and appear in eval cases.
-          if grep -rnoE '/Users/[A-Za-z0-9_.-]+/|/home/[A-Za-z0-9_.-]+/|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}' plugins .claude-plugin \
+          if git grep -nIoE '/Users/[A-Za-z0-9_.-]+/|/home/[A-Za-z0-9_.-]+/|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[a-z]{2,}' \
             | grep -vE 'noreply@anthropic\.com|users\.noreply\.github\.com|@example\.(com|org|net)$'; then
             echo "Remove the personal data above before merging."; exit 1
           fi

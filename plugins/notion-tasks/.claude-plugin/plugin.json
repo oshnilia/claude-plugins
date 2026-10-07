@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "notion-tasks",
-  "version": "0.2.3",
+  "version": "0.2.4",
   "description": "Run a project's work through your own Notion task board: take a ticket, keep its status, write the closing report, file follow-ups. Works with any Notion connection, including the official Notion plugin; with session-board the ticket becomes the brief and Acceptance closes it.",
   "author": { "name": "Ilia", "url": "https://github.com/oshnilia" },
   "homepage": "https://github.com/oshnilia/claude-plugins/tree/main/plugins/notion-tasks",
