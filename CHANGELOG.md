@@ -4,6 +4,11 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
 ## obsidian-tasks
 
+### 0.1.1 — 2026-10-07
+
+- With session-board 0.9.0: when an accepted task is reopened («Переделать» or «Дополнить»), the ticket goes back to
+  the start status; at the next acceptance it is done again, with the report rewritten for the whole task.
+
 ### 0.1.0 — 2026-10-06
 
 - New plugin: the roadmap board in your Obsidian vault as the list of work, built like notion-tasks. A board is a
@@ -17,6 +22,11 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
   lean it works as notion-tasks does.
 
 ## notion-tasks
+
+### 0.2.1 — 2026-10-07
+
+- With session-board 0.9.0: when an accepted task is reopened («Переделать» or «Дополнить»), the ticket goes back to
+  the start status; at the next acceptance it is done again, with the report replaced for the whole task.
 
 ### 0.2.0 — 2026-10-04
 
@@ -36,6 +46,17 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 - A binding that git tracks is refused; a ticket's text never widens Claude's authority.
 
 ## session-board
+
+### 0.9.0 — 2026-10-07
+
+- After acceptance the session goes on. The Acceptance and Task screens offer three ways: «Переделать» (the same task
+  back to work), «Дополнить» (the same task with one more done-when item) and «Новая задача» (a separate task). Redo
+  and extend go to work at once, without Start: the same folder, the next round, the goals open again, an entry in
+  `feedback.md`. The band shows «Что дальше».
+- The chat words «Переделать: …», «Вернуть: …» and «Дополнить: …» after acceptance press these buttons; `/board` on a
+  phone asks what is next.
+- Claude understands a plain message after acceptance: the protocol names the three ways, and the new `reopen` tool
+  puts the task back to work by the same path as the buttons. A separate next task gets its own brief as before.
 
 ### 0.8.0 — 2026-10-04
 

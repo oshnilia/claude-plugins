@@ -6,7 +6,7 @@ a session into a task with a brief at the start and an acceptance at the end.
 
 | Plugin | What it does | Where it works |
 |---|---|---|
-| [`session-board`](plugins/session-board) | A mod for people who run many sessions at once. Two touches per task: a brief with criteria and authority at the start, an Acceptance screen and an interactive HTML report at the end; Claude works alone in between. A free mode for brainstorming and prototypes keeps the ideas and ends with a summary. The task folder keeps the ledger, so compaction loses nothing. Board texts are in Russian. | Claude Code desktop (Code tab) and terminal |
+| [`session-board`](plugins/session-board) | A mod for people who run many sessions at once. Two touches per task: a brief with criteria and authority at the start, an Acceptance screen and an interactive HTML report at the end; Claude works alone in between. After acceptance the same session can redo or extend the task, or start the next one. A free mode for brainstorming and prototypes keeps the ideas and ends with a summary. The task folder keeps the ledger, so compaction loses nothing. Board texts are in Russian. | Claude Code desktop (Code tab) and terminal |
 | [`legible`](plugins/legible) | Karpathy's format ladder: ASD-STE100 text and plain Russian at a measurable strictness, diagram-first answers, HTML explainers, animated step players, teach-back checks | Claude Code; the skills also work on claude.ai |
 | [`lean`](plugins/lean) | Claude writes the least code that solves the problem: reuse, standard library and platform before new code. It says in plain words what it skipped and when to add it. With session-board it is part of each step: a code level in the brief, a self-check before hand-in, «Не построено» at Acceptance. Based on [ponytail](https://github.com/DietrichGebert/ponytail). | Claude Code |
 | [`notion-tasks`](plugins/notion-tasks) | Your own Notion task board as the list of work: take a ticket, keep its status, write the closing report, file follow-ups. It uses the Notion connection you already have (the official Notion plugin, `claude mcp add` or the claude.ai connector). With session-board the ticket becomes the brief, Start sets "In progress" and Accept sets "Done" with the report. | Claude Code, with Notion connected |
@@ -104,7 +104,8 @@ and never claims compliance. License: [MIT](LICENSE).
 
 - **session-board** — мод для тех, кто ведёт много сессий сразу. Два касания на задачу: в начале задание со всеми
   вводными (цель, результат, пункты «готово, когда», полномочия), в конце приёмка одним вердиктом и интерактивный
-  отчёт — схема метро всей сессии. Между ними Claude работает сам и зовёт тебя, только когда упёрся. Журнал лежит в
+  отчёт — схема метро всей сессии. Между ними Claude работает сам и зовёт тебя, только когда упёрся. После приёмки
+  в той же сессии задачу можно переделать, дополнить или начать следующую. Журнал лежит в
   папке задачи, поэтому сжатие переписки ничего не теряет. Подробно — в [README доски](plugins/session-board/README.md).
 - **legible** — лестница форматов Карпаты: текст в ASD-STE100 и простой технический русский с измеримой строгостью,
   схема, HTML-страница, пошаговая анимация, проверка понимания. Подробно — в [README legible](plugins/legible/README.md).

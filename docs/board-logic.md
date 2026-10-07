@@ -13,6 +13,7 @@ none ──► intake ──Start──► work ──submit──► review ─
            ▲                 ▲                 │
            │                 └─── Return ──────┤   (round + 1)
            │                 └─── Accept with fixes: the next submit closes the task
+           │                 └─── Redo / Extend after "accepted" (round + 1, no Start)
            └── a new task after "accepted" starts a fresh ledger
 ```
 
@@ -22,7 +23,7 @@ none ──► intake ──Start──► work ──submit──► review ─
 | `intake` | Claude, then person | Claude turns the person's words into the brief (`task` tool) and asks all missing questions in ONE `AskUserQuestion`. The person checks the brief and presses **Старт**. |
 | `work` | Claude | Claude works alone within its authority. A blocker becomes a card in "Нужен ты". Any other choice: Claude takes the default and records it as a decision or an assumption. |
 | `review` | person | Claude checked every criterion and called `submit`. The board built `report.html` and shows the Acceptance screen. |
-| `accepted` | nobody | Goals are done. The report is final. |
+| `accepted` | person | Goals are done. The report is final until the person redoes or extends the task. |
 
 Work that starts without an intake still gets a task folder (`formal: false`) once it has a goal.
 The Task screen then offers "Оформить задание".
@@ -126,6 +127,22 @@ compaction. A chat word passes the hook, so there the protocol comes in the same
 Everything goes to Claude in ONE message. Remarks marked "make it a rule" go to `.claude/tasks/RULES.md`;
 the board gives these rules to Claude at the start of every session in the project.
 
+## After acceptance
+
+The session goes on after «Принять». The Acceptance and Task screens show three ways, and the band shows «Что дальше».
+
+| Way | Effect |
+|---|---|
+| Переделать | The same task: phase `work`, round + 1, goals open again, no Start. The person's text is the instruction. |
+| Дополнить | The same, and the text becomes a new done-when criterion under the task's goal. |
+| Новая задача | A separate task: Claude writes a new brief and waits for Start; the accepted task stays in its folder. |
+
+Each reopen goes into `feedback.md` as a round of its own; the next `submit` goes to review as usual. The chat words
+«Переделать: …», «Вернуть: …» and «Дополнить: …» press the buttons, and `/board` on a phone asks what is next. A plain
+message after acceptance is Claude's to read: the protocol names the three ways, and the `reopen` tool (kind `redo` or
+`extend`) runs the same reopen as the buttons. A task accepted earlier and already replaced by a new one is not
+reopened this way.
+
 ## lean in the flow
 
 With the [lean](../plugins/lean) plugin the board adds lean to each step. It learns about lean from the line lean's
@@ -155,6 +172,7 @@ project is bound to a board, tell Claude what to do at each board message.
 | Work | Out-of-scope findings and bugs become new tickets on the same board. Each is a decision on the board (`Filed ticket: …`, the URL in evidence), so it shows at Acceptance. |
 | Hand-in | With lean, each open `skipped` item becomes a follow-up ticket; its note gets the URL. The review status, if the board has one. |
 | Acceptance | «Приёмка …: принято» (or the next `submit` after «принято с правками») → the done status and the closing report in the ticket. «вернуть на доработку» keeps the start status. |
+| After acceptance | «Переделай задачу …» or «Дополни задачу …» (a button, a chat word or Claude's `reopen`) → the start status again; the next acceptance sets done and replaces the report. |
 | Free mode | No ticket, no status, no report. At the summary each kept idea that still needs work becomes a follow-up ticket; its URL goes into the idea's evidence, so the summary shows it. |
 
 [obsidian-tasks](../plugins/obsidian-tasks) gives the same steps for a board in an Obsidian vault: the first rule is

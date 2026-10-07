@@ -2,7 +2,7 @@ import type { ElementTable } from 'claude-code'
 
 import type { Authority, BoardStatus, DiffView, Kind, LeanLevel, Ledger, LedgerNode, LiveEvent, OpenTask, Phase, QA, Verdict } from '../types'
 import { LEAN_DEBT_ASK, LEAN_LEVEL, LEAN_LEVELS, LEAN_REVIEW_ASK, leanItems, TAG } from './lean'
-import { AUTHORITIES, AUTHORITY, criteriaOf, IDEA, ideasOf, phaseView, proofOf, renderSummary, ruleCandidates, verdictLine, type VerdictKind } from './task'
+import { AUTHORITIES, AUTHORITY, criteriaOf, IDEA, ideasOf, phaseView, proofOf, renderSummary, ruleCandidates, verdictLine, type ReopenKind, type VerdictKind } from './task'
 
 // Layout rules: docs/mod-design.md. Width comes from e.props.bodyColumns. Rows are a fixed gutter
 // (flexShrink 0) plus a growing, wrapping body (flexGrow 1, minWidth 0). Every gap is an explicit margin.
@@ -42,6 +42,7 @@ export type Actions = {
   addGeneral: (text: string) => void
   toggleRule: (text: string) => void
   sendVerdict: (kind: VerdictKind) => void
+  reopen: (kind: ReopenKind, text: string) => void
   openReport: () => void
   continueTask: (dir: string) => void
 }
@@ -373,6 +374,26 @@ function NoTask(els: Els, d: Data, a: Actions) {
   )
 }
 
+/** After acceptance: redo or extend the same task (back to work at once, no Start), or a new task. */
+function AfterAccept(els: Els, d: Data, a: Actions) {
+  const { Box, Button } = els
+  const field = d.editing === 'redo' ? Field(els, 'redo', 'Что переделать', 'что не так в принятой работе', 'в работу', v => a.reopen('redo', v), () => a.edit(''))
+    : d.editing === 'extend' ? Field(els, 'extend', 'Что добавить', 'новый пункт «готово, когда»', 'в работу', v => a.reopen('extend', v), () => a.edit(''))
+      : d.editing === 'intake' ? Field(els, 'intake', 'Новая задача', 'что сделать, зачем, что сдать, что нельзя', 'поставить', v => a.newTask(v), () => a.edit(''))
+        : null
+  return (
+    <Box key="after-accept" flexDirection="column">
+      {Rule(els, 'r-next', 'Дальше')}
+      {Para(els, 'aa-what', '«Переделать» и «Дополнить» сразу вернут эту задачу в работу, без «Старт». «Новая задача» — отдельная задача.', true)}
+      {field ?? ActionBar(els, 'aa-a', [
+        Once(els, d, 'intake', <Button key="task-new" label="Новая задача" variant="primary" onPress={() => a.edit('intake')} />),
+        <Button key="task-redo" label="Переделать" onPress={() => a.edit('redo')} />,
+        <Button key="task-extend" label="Дополнить" onPress={() => a.edit('extend')} />,
+      ])}
+    </Box>
+  )
+}
+
 export function TaskView(els: Els, d: Data, a: Actions) {
   const { Box, Text, Button } = els
   const L = d.ledger
@@ -428,11 +449,7 @@ export function TaskView(els: Els, d: Data, a: Actions) {
           {AddBar(els, d, a, ['rule', 'ban', 'fact', 'criterion'])}
         </Box>
       ) : null}
-      {t.phase === 'accepted' ? (
-        d.editing === 'intake'
-          ? Field(els, 'intake', 'Новая задача', 'что сделать, зачем, что сдать, что нельзя', 'поставить', v => a.newTask(v), () => a.edit(''))
-          : ActionBar(els, 'ta-a', [Once(els, d, 'intake', <Button key="task-new" label="Новая задача" variant="primary" onPress={() => a.edit('intake')} />)], 0, SPACE.section)
-      ) : null}
+      {t.phase === 'accepted' ? AfterAccept(els, d, a) : null}
       {Rule(els, 'r-free', 'Свободный режим')}
       {Para(els, 'tf-free', t.phase === 'accepted'
         ? 'Без задания и приёмки: обсуждаем, пробуем, переделываем; в конце Claude подводит итог по идеям.'
@@ -738,7 +755,7 @@ export function ReviewView(els: Els, d: Data, a: Actions) {
     return (
       <Box flexDirection="column">
         {head}
-        {ActionBar(els, 'acc-a', [<Button key="task-new" label="Новая задача" variant="primary" onPress={() => { a.setView('task'); a.edit('intake') }} />], 0, SPACE.section)}
+        {AfterAccept(els, d, a)}
       </Box>
     )
   }
@@ -1111,7 +1128,8 @@ export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act
       : phase === 'intake' ? { label: 'Проверить и начать', press: () => act.open('task') }
         : phase === 'review' && b.fixes ? { label: `Отправить приёмку · правок ${b.fixes}`, press: () => act.open('review') }
           : phase === 'review' ? { label: 'Принять работу', press: () => act.accept() }
-            : null
+            : phase === 'accepted' ? { label: 'Что дальше', press: () => act.open('review') }
+              : null
   // the band draws its own collapse mark at the right edge: leave it room
   const row = (
     <Box key="band-row" flexDirection="row" justifyContent="space-between" columnGap={2} paddingRight={4}>
