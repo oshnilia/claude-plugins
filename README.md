@@ -67,7 +67,8 @@ creates a board, asks how Claude reaches the vault, and writes `.claude/obsidian
   Task folders stay out of git by default. A report contains your prompts, Claude's summaries and diffs: read it
   before you share it.
 - **A mod runs code.** session-board runs inside your session with your user rights. It runs only read-only `git`
-  commands, `open` and `mv` inside its task folder. Install it only from this repository.
+  commands, `mv` inside its task folder, and the command that opens a file: `open` on macOS, `explorer` on
+  Windows, `xdg-open` on Linux. Install it only from this repository.
 - **Repository content is not trusted.** The board ignores a policy, rules or task folders that come with a cloned
   project, and it marks rules it inferred from tool output as unconfirmed. notion-tasks and obsidian-tasks ignore a board
   binding that git tracks, and a ticket's text never widens Claude's authority.
@@ -154,7 +155,8 @@ claude plugin install obsidian-tasks@oshn
 - lean — это текст и один хук на `sh`: при старте сессии он печатает правила. Файлы проекта он не читает и не пишет.
 - Доска пишет только в `<проект>/.claude/tasks/` и `<проект>/.claude/session-board/`; папки задач не попадают в git.
   В отчёте твои запросы, сводки Claude и изменения — прочитай его, прежде чем кому-то отправить.
-- Мод выполняет код в твоей сессии с твоими правами: только `git` на чтение, `open` и `mv` внутри папки задачи.
+- Мод выполняет код в твоей сессии с твоими правами: только `git` на чтение, `mv` внутри папки задачи и
+  команду, которая открывает файл: `open` на macOS, `explorer` на Windows, `xdg-open` на Linux.
   Ставь его только из этого репозитория.
 - Доска не доверяет содержимому чужих репозиториев: политику, правила и папки задач из клонированного проекта она
   не применяет, а правила, выведенные из вывода инструментов, помечает как неподтверждённые.

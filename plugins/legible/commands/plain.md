@@ -15,6 +15,8 @@ line with the score, for example `plain-80: 94%`:
 - English: `python3 "${CLAUDE_PLUGIN_ROOT}/skills/plain-english/scripts/ste_score.py" --level <level> -`
 - Russian: `python3 "${CLAUDE_PLUGIN_ROOT}/skills/plain-russian/scripts/ru_score.py" --level <level> -`
 
+On Windows, when `python3` is not found, use `python` or `py -3`.
+
 If there is no shell tool, show only the final text and say nothing about the scorer.
 
 Text: $ARGUMENTS

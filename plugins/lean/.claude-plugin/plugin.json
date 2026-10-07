@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "lean",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Claude writes the least code that solves the problem: reuse, standard library and platform before new code. What it skipped goes to a short plain-language line and, with session-board, to the board for your acceptance. Based on ponytail by Dietrich Gebert.",
   "author": { "name": "Ilia", "url": "https://github.com/oshnilia" },
   "homepage": "https://github.com/oshnilia/claude-plugins/tree/main/plugins/lean",

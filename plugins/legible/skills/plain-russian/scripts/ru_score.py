@@ -231,6 +231,9 @@ def self_test() -> int:
 
 
 def main() -> int:
+    # Windows pipes use the ANSI code page (cp1251, cp1252): read and write UTF-8, as with files
+    sys.stdin.reconfigure(encoding="utf-8")
+    sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("file", nargs="?", default="-")
     ap.add_argument("--level", type=int, choices=[50, 80, 100], default=80)

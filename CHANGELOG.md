@@ -4,6 +4,11 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
 ## obsidian-tasks
 
+### 0.1.3 — 2026-10-07
+
+- Windows: the repository keeps LF line ends (`.gitattributes`). Git for Windows checks files out with CRLF by
+  default, and then the start hook failed in `sh`. The README says the hook needs Git Bash on Windows.
+
 ### 0.1.1 — 2026-10-07
 
 - With session-board 0.9.0: when an accepted task is reopened («Переделать» or «Дополнить»), the ticket goes back to
@@ -22,6 +27,11 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
   lean it works as notion-tasks does.
 
 ## notion-tasks
+
+### 0.2.3 — 2026-10-07
+
+- Windows: the repository keeps LF line ends (`.gitattributes`). Git for Windows checks files out with CRLF by
+  default, and then the start hook failed in `sh`. The README says the hook needs Git Bash on Windows.
 
 ### 0.2.1 — 2026-10-07
 
@@ -46,6 +56,17 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 - A binding that git tracks is refused; a ticket's text never widens Claude's authority.
 
 ## session-board
+
+### 0.9.2 — 2026-10-07
+
+- Windows and Linux: «Открыть отчёт» and `/board-report` ran `open`, which exists only on macOS. The board now uses
+  `explorer` on Windows and `xdg-open` on Linux. A missing command shows a message instead of an error.
+- Windows: «Открыть» on a project file only shows it in Explorer, because a double click there runs `.py`, `.js`,
+  `.bat` and more.
+- Windows paths (`C:\...`, backslashes) count as the project's: the report shows their diff, «Открыть» accepts
+  them. The report hides the home folder on Windows and Linux too (`C:/Users/<name>`, `/home/<name>`).
+- Without `mv` (Windows outside Git Bash), a task that gets its brief keeps its first folder name instead of
+  failing.
 
 ### 0.9.0 — 2026-10-07
 
@@ -169,6 +190,12 @@ Security:
 
 ## legible
 
+### 0.2.1 — 2026-10-07
+
+- Windows: the scorers read stdin and print in UTF-8. A Windows pipe uses the ANSI code page, and `ru_score.py`
+  failed on Russian text. CI runs the self-tests with `PYTHONIOENCODING=cp1252`.
+- The skills say to use `python` or `py -3` on Windows when `python3` is not found.
+
 ### 0.2.0 — 2026-10-03
 
 - The format ladder from Karpathy's post: text in ASD-STE100, then a diagram, then an HTML page, then an animated
@@ -194,6 +221,11 @@ Security:
   router, teach-back, the `plain-80` output style and four commands.
 
 ## lean
+
+### 0.2.1 — 2026-10-07
+
+- Windows: the repository keeps LF line ends (`.gitattributes`). Git for Windows checks files out with CRLF by
+  default, and then the start hook failed in `sh`.
 
 ### 0.2.0 — 2026-10-04
 

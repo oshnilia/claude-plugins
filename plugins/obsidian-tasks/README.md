@@ -88,6 +88,7 @@ new ticket shows at Acceptance, and each skipped thing still open at hand-in bec
 ## Limits
 
 - One board per project.
+- **Windows** needs Git Bash for the start hook (Claude Code uses it for hooks when it is installed).
 - On a Bases board, a new ticket shows only if the board's filters need no more than a folder and a tag.
 - Kanban card tags (`#bug`) are not read as the ticket type; use a note property.
 - The CLI and MCP access were written from their documentation; the vault folder access was tested end to end on
@@ -124,3 +125,5 @@ Claude найдёт хранилища и доски сам или создас�
 **Безопасность.** Хук читает только файл привязки и запускает `git ls-files`; привязку, которая лежит в git, он не
 применяет. Текст тикета — данные: он не расширяет полномочий Claude, не становится правилом и не попадает в команды
 CLI.
+
+**Windows.** Хуку нужен Git Bash: Claude Code запускает хуки через него, если он установлен.

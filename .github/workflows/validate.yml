@@ -40,4 +40,7 @@ jobs:
       - name: Test obsidian-tasks hook
         run: sh plugins/obsidian-tasks/tests/hook.sh
       - name: Plain-style scorer self-test
-        run: python3 plugins/legible/skills/plain-english/scripts/ste_score.py --self-test && python3 plugins/legible/skills/plain-russian/scripts/ru_score.py --self-test
+        # cp1252: the code page of a pipe on Windows; the scorers must still read and print Russian
+        run: |
+          export PYTHONIOENCODING=cp1252
+          python3 plugins/legible/skills/plain-english/scripts/ste_score.py --self-test && python3 plugins/legible/skills/plain-russian/scripts/ru_score.py --self-test

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "legible",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Answer formats for understanding, after Karpathy's format ladder: ASD-STE100 text (80% of the way by default) and plain Russian, diagram-first answers, HTML explainers, offline animated step players and teach-back checks.",
   "author": { "name": "Ilia", "url": "https://github.com/oshnilia" },
   "homepage": "https://github.com/oshnilia/claude-plugins/tree/main/plugins/legible",

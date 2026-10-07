@@ -3,7 +3,7 @@ import type { EngineInterface, Register } from 'claude-code'
 
 import type { Authority, BoardStatus, DiffView, Explain, LeanLevel, Ledger, LedgerNode, LiveEvent, OpenTask, QA, SentAction, Submission, TaskSpec, TurnCard } from '../types'
 import { askPrompt, cartographerPrompt, compactRules, parseReply, type TurnDigest } from './cartographer'
-import { deterministicOps, FILE_TOOLS, liveEvent, targetOf, toolLabel } from './extract'
+import { deterministicOps, FILE_TOOLS, home as homeDir, liveEvent, slashed, targetOf, toolLabel } from './extract'
 import { applyOps, cleanBrief, emptyLedger, nextId, parseOp, renderBrief, renderMarkdown, txt, upsertTurn, type Op } from './ledger'
 import { renderReport, type ReportDiff } from './report'
 import {
@@ -338,22 +338,45 @@ async function reportRenderError($: EngineInterface, viewName: string, msg: stri
   if (dir) await $.fs.write(`${dir}/render-error.txt`, `${await iso($)} view=${viewName}\n${msg}\n`)
 }
 
-async function openPath($: EngineInterface, path: string) {
-  const r = await $.process.run(['open', path])
-  if (r.exitCode !== 0) $.ui.toast(`Не удалось открыть ${path}`)
+const isWindows = async ($: EngineInterface) => (await $.env.get('OS')) === 'Windows_NT'
+
+/**
+ * The command that opens a file with its app, or with `reveal` shows it in the file manager without opening it:
+ * explorer on Windows, open on macOS, xdg-open on Linux (no reveal there: it opens the folder).
+ */
+async function opener($: EngineInterface, path: string, reveal: boolean): Promise<string[]> {
+  if (await isWindows($)) {
+    const win = path.replace(/\//g, '\\')
+    return reveal ? ['explorer', '/select,', win] : ['explorer', win]
+  }
+  if ((await $.process.run(['uname', '-s'])).stdout.trim() === 'Darwin') return reveal ? ['open', '-R', path] : ['open', path]
+  return ['xdg-open', reveal ? path.slice(0, path.lastIndexOf('/')) || '/' : path]
+}
+
+async function openPath($: EngineInterface, path: string, reveal = false) {
+  try {
+    const argv = await opener($, path, reveal)
+    const r = await $.process.run(argv)
+    // explorer exits with 1 even when the window opened
+    if (r.exitCode === 0 || argv[0] === 'explorer') return
+  } catch {
+    // the command is not on this machine
+  }
+  $.ui.toast(`Не удалось открыть ${path}`)
 }
 
 // files that macOS would run or follow instead of showing: reveal them in Finder
 const RUNS = /\.(app|command|tool|terminal|sh|zsh|bash|scpt|applescript|workflow|action|pkg|mpkg|dmg|jar|webloc|inetloc|fileloc|url|desktop)$/i
 
 /** "Открыть" on a file from the ledger: only files of this project, and never by running them. */
-async function openFile($: EngineInterface, path: string) {
+async function openFile($: EngineInterface, raw: string) {
+  const path = slashed(raw)
   if (!root || !path.startsWith(`${root}/`) || path.includes('/../') || !(await $.fs.exists(path))) {
     $.ui.toast('Доска открывает только файлы этого проекта')
     return
   }
-  const r = await $.process.run(RUNS.test(path) ? ['open', '-R', path] : ['open', path])
-  if (r.exitCode !== 0) $.ui.toast(`Не удалось открыть ${path}`)
+  // Windows runs .py, .js, .bat and many more on a double click: there the board only shows the file in Explorer
+  await openPath($, path, RUNS.test(path) || (await isWindows($)))
 }
 
 async function toggleDiff($: EngineInterface, path: string) {
@@ -397,10 +420,10 @@ async function collectDiff($: EngineInterface, L: Ledger): Promise<ReportDiff> {
   const out: ReportDiff = { stat: '', files: [] }
   if (!root) return out
   const git = (args: string[]) => $.process.run(['git', '-C', root, ...args])
-  const paths = [...new Set(L.turns.flatMap(t => t.paths ?? []))].filter(p => !p.includes('/.claude/tasks/'))
+  const paths = [...new Set(L.turns.flatMap(t => t.paths ?? []).map(slashed))].filter(p => !p.includes('/.claude/tasks/'))
   const inside = paths.filter(p => p.startsWith(`${root}/`))
   const outside = paths.filter(p => !p.startsWith(`${root}/`))
-  const rel = (p: string) => (p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p.replace(/^\/Users\/[^/]+\//, '~/'))
+  const rel = (p: string) => (p.startsWith(`${root}/`) ? p.slice(root.length + 1) : p.replace(homeDir, '~/'))
   if (inside.length && (await git(['rev-parse', '--is-inside-work-tree'])).exitCode === 0) {
     const ref = L.task?.base ?? 'HEAD'
     out.stat = (await git(['diff', '--stat', '--no-color', ref, '--', ...inside])).stdout.trim().slice(0, 4000)
@@ -879,7 +902,7 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     sessionId = await $.session.id()
-    root = await projectRoot($, e.cwd)
+    root = slashed(await projectRoot($, e.cwd))
     const legacy = `${root}/.claude/session-board/${sessionId}`
     const state = await read($, ledger)
     if (state.sid !== sessionId || (!state.nodes.length && !state.task)) {
@@ -1147,7 +1170,7 @@ export const register: Register = (on, options) => {
       const label = toolLabel(e.tool)
       current.tools[label] = (current.tools[label] ?? 0) + 1
       if (FILE_TOOLS.has(e.tool) && !isError) {
-        const abs = typeof input.file_path === 'string' ? input.file_path : typeof input.notebook_path === 'string' ? input.notebook_path : ''
+        const abs = slashed(typeof input.file_path === 'string' ? input.file_path : typeof input.notebook_path === 'string' ? input.notebook_path : '')
         if (abs && !current.paths.has(abs)) {
           current.paths.add(abs)
           current.files.add(targetOf(e.tool, input))
@@ -1321,7 +1344,8 @@ export const register: Register = (on, options) => {
     else if (prev && !prev.formal) {
       // work that grew without a brief now gets a folder named after the real title
       const renamed = await newTaskDir($, input.title.en)
-      if (renamed && (await $.process.run(['mv', dir, renamed])).exitCode === 0) dir = renamed
+      // lean: no mv on Windows outside Git Bash, so the folder keeps its first name there; add a copy when it matters
+      if (renamed && (await $.process.run(['mv', dir, renamed]).catch(() => null))?.exitCode === 0) dir = renamed
     }
     const keepPhase = prev && prev.formal && prev.phase !== 'intake'
     const task: TaskSpec = {
