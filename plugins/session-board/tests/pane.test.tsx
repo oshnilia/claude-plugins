@@ -255,16 +255,63 @@ test('a long answer shows the format ladder; a press sends the request and takes
   await band.unmount()
 })
 
-test('after acceptance «Дополнить» and «Переделать» put the same task back to work at once', async ($, on) => {
-  const sent: string[] = []
-  on('prompt.submit', async (_$, e) => {
-    sent.push(e.text)
-    return { text: e.text }
-  })
-  const task = async () => (await $.tool.call({ tool: 'mcp__session-board__ledger_read', section: 'task' })).text ?? ''
+test('after acceptance what is next is the person\'s message: no buttons to pick a way', async ($, on) => {
+  on('prompt.submit', async (_$, e) => ({ text: e.text }))
   on('turn.complete', async (_$, e) => ({ text: e.answer }))
-  // Claude answers each board message: the board shows a sent button as «отправлено» until then
-  const answered = () => $.turn.complete({ answer: 'Ок.', durationMs: 1, isAborted: false, turnId: `t${sent.length}`, reason: 'answer' })
+  const task = async () => (await $.tool.call({ tool: 'mcp__session-board__ledger_read', section: 'task' })).text ?? ''
+  const handIn = (ids: string[]) => $.tool.call({ tool: 'mcp__session-board__submit', summary_ru: 'Готово.', criteria: ids.map(id => ({ id, status: 'proven', result_ru: 'Да.' })) })
+  const accept = async () => {
+    const ui = await $.ui.mount({ plugin: 'session-board', surface: 'desktop', ...PANE })
+    await ui.press({ key: 'v-accept' })
+    await $.turn.complete({ answer: 'Ок.', durationMs: 1, isAborted: false, turnId: `t${Date.now()}`, reason: 'answer' })
+    return ui
+  }
+  await $.tool.call(BRIEF)
+  let ui = await $.ui.mount({ plugin: 'session-board', surface: 'desktop', ...PANE })
+  await ui.press({ key: 'task-start' })
+  await ui.unmount()
+  await handIn(['K1', 'K2'])
+  ui = await accept()
+  expect(await task()).toContain('фаза: accepted')
+
+  // the band above the input, where it draws: a hint, no button to pick a way
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const band = await $.ui.mount({ plugin: 'session-board', surface, ...BAND })
+    expect(await band.find({ text: /что дальше — напиши/ })).toBeDefined()
+    expect(await band.find({ key: 'band-main' })).toBeUndefined()
+    await band.unmount()
+  }
+  // the Acceptance and Task screens: the same hint, no «Переделать», «Дополнить», «Новая задача»
+  for (const screen of ['review', 'task']) {
+    if (screen === 'task') await ui.press({ key: 'view-task' })
+    expect(await ui.find({ text: /Напиши в чат, что дальше/ })).toBeDefined()
+    for (const key of ['task-new', 'task-redo', 'task-extend']) expect(await ui.find({ key })).toBeUndefined()
+  }
+  await ui.unmount()
+
+  // Claude reads the person's message and reopens: the same task, a new round, no Start
+  let r = await $.tool.call({ tool: 'mcp__session-board__reopen', kind: 'extend', text: 'полоса показывает раунд' })
+  expect(r.text).toContain('Дополни задачу «Выпустить доску», раунд 2: полоса показывает раунд. Это новый пункт K3')
+  expect(r.text).toContain('«Старт» не нужен')
+  let t = await task()
+  expect(t).toContain('фаза: work')
+  expect(t).toContain('**K3** полоса показывает раунд')
+  expect(t).toContain('**K1** Тесты проходят')
+  await handIn(['K1', 'K2', 'K3'])
+  ;(await accept()).unmount()
+  r = await $.tool.call({ tool: 'mcp__session-board__reopen', kind: 'redo', text: 'раунд мелким шрифтом' })
+  expect(r.text).toContain('Переделай задачу «Выпустить доску», раунд 3: раунд мелким шрифтом.')
+  t = await task()
+  expect(t).toContain('фаза: work')
+  expect(t).toContain('раунд 3')
+  // the goal is open again until the next acceptance
+  expect((await $.tool.call({ tool: 'mcp__session-board__ledger_read', id: 'G1' })).text).toContain('"active"')
+})
+
+test('on the Acceptance screen a message to redo or add needs no «Принять»', async ($, on) => {
+  on('prompt.submit', async (_$, e) => ({ text: e.text }))
+  on('turn.complete', async (_$, e) => ({ text: e.answer }))
+  const task = async () => (await $.tool.call({ tool: 'mcp__session-board__ledger_read', section: 'task' })).text ?? ''
   const handIn = (ids: string[]) => $.tool.call({ tool: 'mcp__session-board__submit', summary_ru: 'Готово.', criteria: ids.map(id => ({ id, status: 'proven', result_ru: 'Да.' })) })
   const pane = () => $.ui.mount({ plugin: 'session-board', surface: 'desktop', ...PANE })
   await $.tool.call(BRIEF)
@@ -272,42 +319,32 @@ test('after acceptance «Дополнить» and «Переделать» put t
   await ui.press({ key: 'task-start' })
   await ui.unmount()
   await handIn(['K1', 'K2'])
+
+  // the band keeps one button; the screen says a message is enough
+  for (const surface of ['desktop', 'terminal'] as const) {
+    const band = await $.ui.mount({ plugin: 'session-board', surface, ...BAND })
+    expect(await band.find({ key: 'band-main', text: 'Принять работу' })).toBeDefined()
+    await band.unmount()
+  }
   ui = await pane()
-  await ui.press({ key: 'v-accept' })
-  await answered()
-  expect(await task()).toContain('фаза: accepted')
-
-  const band = await $.ui.mount({ plugin: 'session-board', surface: 'desktop', ...BAND })
-  expect(await band.find({ key: 'band-main', text: 'Что дальше' })).toBeDefined()
-  await band.unmount()
-  // the Acceptance screen: three ways on
-  expect(await ui.find({ key: 'task-new' })).toBeDefined()
-  expect(await ui.find({ key: 'task-redo' })).toBeDefined()
-  await ui.press({ key: 'task-extend' })
-  await $.ui.input({ plugin: 'session-board', key: 'extend-in', text: 'полоса показывает раунд' })
-  let t = await task()
-  expect(t).toContain('фаза: work')
-  expect(t).toContain('раунд 2')
-  expect(t).toContain('**K3** полоса показывает раунд')
-  expect(t).toContain('**K1** Тесты проходят')
-  expect(sent.at(-1)).toContain('Дополни задачу «Выпустить доску», раунд 2: полоса показывает раунд. Это новый пункт K3')
-  expect(sent.at(-1)).toContain('«Старт» не нужен')
-
+  expect(await ui.find({ key: 'v-accept' })).toBeDefined()
+  expect(await ui.find({ text: /Напиши об этом в чат/ })).toBeDefined()
+  expect(await ui.find({ key: 'task-redo' })).toBeUndefined()
   await ui.unmount()
-  await answered()
+
+  // Claude reads «добавь тёмную тему» and reopens without a verdict
+  const r = await $.tool.call({ tool: 'mcp__session-board__reopen', kind: 'extend', text: 'тёмная тема' })
+  expect(r.text).toContain('Дополни задачу «Выпустить доску», раунд 2: тёмная тема. Это новый пункт K3')
+  const t = await task()
+  expect(t).toContain('фаза: work')
+  expect(t).toContain('**K3** тёмная тема')
+
+  // a remark drafted on the screen leaves with a verdict: the hint steps aside
   await handIn(['K1', 'K2', 'K3'])
   ui = await pane()
-  await ui.press({ key: 'v-accept' })
-  await answered()
-  // the Task screen offers the same after acceptance
-  await ui.press({ key: 'view-task' })
-  await ui.press({ key: 'task-redo' })
-  await $.ui.input({ plugin: 'session-board', key: 'redo-in', text: 'раунд мелким шрифтом' })
+  await ui.press({ key: 'rem-add' })
+  await $.ui.input({ plugin: 'session-board', key: 'general-in', text: 'кнопка мелкая' })
+  expect(await ui.find({ text: /Напиши об этом в чат/ })).toBeUndefined()
   await ui.unmount()
-  t = await task()
-  expect(t).toContain('фаза: work')
-  expect(t).toContain('раунд 3')
-  expect(sent.at(-1)).toContain('Переделай задачу «Выпустить доску», раунд 3: раунд мелким шрифтом.')
-  // the goal is open again until the next acceptance
-  expect((await $.tool.call({ tool: 'mcp__session-board__ledger_read', id: 'G1' })).text).toContain('"active"')
+  expect(await task()).toContain('фаза: review')
 })

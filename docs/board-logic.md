@@ -129,7 +129,10 @@ the board gives these rules to Claude at the start of every session in the proje
 
 ## After acceptance
 
-The session goes on after «Принять». The Acceptance and Task screens show three ways, and the band shows «Что дальше».
+The session goes on after «Принять». There are no buttons to pick what is next: the person writes, and Claude reads
+the message as one of three ways. The Acceptance and Task screens and the band only say so. On the Acceptance screen,
+before «Принять» (phase `review`), a message to redo or add reopens the task the same way, without a verdict; the
+hint stands aside while the person has drafted remarks, because those leave with a verdict.
 
 | Way | Effect |
 |---|---|
@@ -138,9 +141,9 @@ The session goes on after «Принять». The Acceptance and Task screens sh
 | Новая задача | A separate task: Claude writes a new brief and waits for Start; the accepted task stays in its folder. |
 
 Each reopen goes into `feedback.md` as a round of its own; the next `submit` goes to review as usual. The chat words
-«Переделать: …», «Вернуть: …» and «Дополнить: …» press the buttons, and `/board` on a phone asks what is next. A plain
-message after acceptance is Claude's to read: the protocol names the three ways, and the `reopen` tool (kind `redo` or
-`extend`) runs the same reopen as the buttons. A task accepted earlier and already replaced by a new one is not
+«Переделать: …», «Вернуть: …» and «Дополнить: …» (the last one also on the Acceptance screen) reopen at once, and
+`/board` on a phone asks one open question and passes the answer to Claude. Any other message is Claude's to read: the
+protocol names the three ways, and the `reopen` tool (kind `redo` or `extend`) runs the reopen. A task accepted earlier and already replaced by a new one is not
 reopened this way.
 
 ## lean in the flow

@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "session-board",
-  "version": "0.9.3",
+  "version": "0.10.0",
   "description": "Desktop mod for people who run many sessions: a task brief with criteria and authority at the start, Claude works alone and calls you only for blockers, an acceptance screen and an HTML report at the end. A free mode for brainstorming and prototypes keeps the ideas and ends with a summary. The task folder keeps the ledger, so compaction loses nothing.",
   "author": {
     "name": "Ilia",
