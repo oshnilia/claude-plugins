@@ -658,24 +658,27 @@ async function sendVerdict($: EngineInterface, kind: VerdictKind, send = true): 
 }
 
 /**
- * «Переделать» or «Дополнить» after acceptance: the same task goes back to work for a new round, without Start.
- * The person's text is the instruction; «Дополнить» also adds it as a done-when item. The board button, the chat
- * word and Claude's reopen tool all come here; '' when there is no accepted strict task.
+ * «Переделать» or «Дополнить» on the Acceptance screen or after acceptance: the same task goes back to work for a new
+ * round, without a verdict and without Start. The person's text is the instruction; «Дополнить» also adds it as a
+ * done-when item. The chat word and Claude's reopen tool come here; '' when there is no handed-in or accepted strict
+ * task.
  */
 async function reopenTask($: EngineInterface, kind: ReopenKind, text: string, send = true): Promise<string> {
   const s = text.trim()
   const L = await read($, ledger)
   const t = L.task
   await update($, editing, () => '')
-  if (!s || !t || t.phase !== 'accepted' || t.mode === 'free') return ''
-  const goals = L.nodes.filter(n => n.kind === 'goal' && n.status === 'done')
-  const ops: Op[] = goals.map(g => ({ op: 'update', id: g.id, status: 'active' }))
+  if (!s || !t || (t.phase !== 'accepted' && t.phase !== 'review') || t.mode === 'free') return ''
+  const goals = L.nodes.filter(n => n.kind === 'goal' && !gone(n))
+  const ops: Op[] = goals.filter(g => g.status === 'done').map(g => ({ op: 'update', id: g.id, status: 'active' }))
   const crit = kind === 'extend' ? nextId(L.nodes, 'criterion') : undefined
   if (crit) ops.push({ op: 'add', kind: 'criterion', id: crit, ...(goals[0] ? { parent: goals[0].id } : {}), title: { en: s, ru: s }, status: 'todo', evidence: [{ ref: 'board', type: 'user' }] })
   if (ops.length) await commit($, ops, current?.n ?? L.turns.at(-1)?.n ?? 1, 'user')
   const L2 = await setTask($, x => ({ ...x, phase: 'work', round: x.round + 1, acceptOnSubmit: false }))
   const msg = reopenMessage(L2.task!, kind, s, crit)
   await logFeedback($, t, `## Раунд ${L2.task!.round}: ${REOPEN_LABEL[kind]} (${(await iso($)).slice(0, 16).replace('T', ' ')})\n\n${msg}`)
+  // lean: a reopen on the Acceptance screen drops remarks drafted on the board (the board's hint hides then); carry
+  // them into the message if people draft remarks and then write what to redo
   await update($, verdict, () => emptyVerdict())
   if (send) await sendOnce($, 'reopen', msg)
   return msg
@@ -723,7 +726,7 @@ const SUBMIT_TOOL_DESCRIPTION =
   'In free mode («Свободный режим») submit is the summary: give every idea its final status first, then summary_ru, next, for_you and an empty criteria list; there is no verdict.'
 
 const REOPEN_TOOL_DESCRIPTION =
-  'Put the accepted task of this session back to work for a new round, without Start. Use it when, after «принято», the person asks in their own words to redo the accepted result (kind redo) or to add one more thing to the same task (kind extend: the text becomes a new done-when item). ' +
+  'Put the handed-in or accepted task of this session back to work for a new round, without a verdict and without Start. Use it when, on the Acceptance screen or after «принято», the person asks in their own words to redo the result (kind redo) or to add one more thing to the same task (kind extend: the text becomes a new done-when item). ' +
   'For a separate next task, write a new brief with the task tool instead. After the call, do the work at once, check every criterion and hand in with submit.'
 
 // ---------- board actions: the same for every surface ----------
@@ -813,7 +816,6 @@ function boardActions($: EngineInterface): Actions {
     },
     toggleRule: text => void update($, verdict, v => ({ ...v, rules: v.rules.includes(text) ? v.rules.filter(r => r !== text) : [...v.rules, text] })),
     sendVerdict: kind => later(() => sendVerdict($, kind)),
-    reopen: (kind, text) => later(() => reopenTask($, kind, text)),
     openReport: () => later(() => openReport($)),
     continueTask: dir => later(() => continueTask($, dir)),
   }
@@ -834,16 +836,10 @@ async function askNext($: EngineInterface) {
   const LATER = 'Позже'
   const FREE = 'Свободный режим'
   if (t?.phase === 'accepted' && t.mode !== 'free') {
-    const REDO = 'Переделать'
-    const EXTEND = 'Дополнить'
-    const x = await ask(`Задача «${t.title.ru}» принята. Что дальше? Новую задачу опишите в «Other».`, [REDO, EXTEND, FREE, LATER])
+    const x = await ask(`Задача «${t.title.ru}» принята. Что дальше? Напишите в «Other»: что переделать, что добавить или новую задачу.`, [IN_CHAT, FREE, LATER])
     if (x === FREE) return void (await freeMode($))
-    if (x === REDO || x === EXTEND) {
-      const text = await ask(x === REDO ? 'Что переделать? Впишите в «Other».' : 'Что добавить в задачу? Впишите в «Other».', [IN_CHAT, LATER])
-      if (text && text !== IN_CHAT && text !== LATER) await reopenTask($, x === REDO ? 'redo' : 'extend', text)
-      return
-    }
-    if (x && x !== LATER) await sendOnce($, 'intake', `Новая задача: ${x}`)
+    // the person's own words, not a picked way: Claude reads them and reopens this task or writes a new brief
+    if (x && x !== IN_CHAT && x !== LATER) await sendOnce($, 'next', x)
     return
   }
   if (!t || t.phase === 'accepted') {
@@ -1378,7 +1374,7 @@ export const register: Register = (on, options) => {
     const i = e as unknown as { kind?: unknown; text?: unknown }
     const kind: ReopenKind = i.kind === 'extend' ? 'extend' : 'redo'
     const msg = await reopenTask($, kind, typeof i.text === 'string' ? i.text.slice(0, 600) : '', false)
-    if (!msg) return reply('Not reopened: this session has no accepted task, or the text is empty. For a separate task, write a brief with the task tool.')
+    if (!msg) return reply('Not reopened: this session has no handed-in or accepted task, or the text is empty. For a separate task, write a brief with the task tool.')
     openBoard($)
     return reply(`Reopened. The board sent nothing; this is the instruction now:\n${msg}`)
   })

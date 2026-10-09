@@ -67,6 +67,15 @@ Each plugin has its own version. A release is a git tag `<plugin>--v<version>`.
 
 ## session-board
 
+### 0.10.0 — 2026-10-09
+
+- No buttons to pick what is next: «Переделать», «Дополнить», «Новая задача» and «Что дальше» are gone from the
+  board and the band. The person writes, and Claude reads the message as a redo, an extension or a new task. The
+  screens and the band only say «что дальше — напиши»; `/board` on a phone asks one open question.
+- A redo or an extension works on the Acceptance screen too, before «Принять»: the task goes back to work for a new
+  round at once, and a bound ticket does not pass through «Done» for nothing. The chat word «Дополнить: …» and
+  Claude's `reopen` tool work there as well.
+
 ### 0.9.3 — 2026-10-07
 
 - Security: `policy.json`, `RULES.md` and task folders that a repository ships behind a symlinked or submodule

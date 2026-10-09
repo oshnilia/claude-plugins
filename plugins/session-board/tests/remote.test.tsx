@@ -110,7 +110,7 @@ test('a new brief while the last task waits for acceptance starts a new task', a
 
 test('after acceptance the chat words, /board and Claude\'s reopen tool put the task back to work', async ($, on) => {
   const clock = mock.clock(on)
-  const p = phone(on, ['Переделать', 'кнопка мелкая'])
+  const p = phone(on, ['кнопка мелкая'])
   const accept = async (ids: string[]) => {
     await $.tool.call({ tool: 'mcp__session-board__submit', summary_ru: 'Готово.', criteria: ids.map(id => ({ id, status: 'proven', result_ru: 'Да.' })) })
     await $.prompt.submit({ text: 'Принять', origin: BRIDGE })
@@ -135,26 +135,37 @@ test('after acceptance the chat words, /board and Claude\'s reopen tool put the 
   await accept(['K1', 'K2', 'K3'])
   const card = await $.command.run({ command: 'board', args: '', origin: BRIDGE, presentation: { isFullscreen: false, columns: 60 } })
   expect(card.text).toContain('«Переделать: что не так»')
+  // /board asks one open question: no way to pick first, the person's words go to Claude as they are
   await clock.advance(1)
-  expect(p.asked.at(-2)).toContain('принята. Что дальше?')
-  t = await task($)
-  expect(t).toContain('фаза: work')
-  expect(t).toContain('раунд 3')
-  expect(p.prompts.at(-1)).toContain('Переделай задачу «Выпустить доску», раунд 3: кнопка мелкая.')
+  expect(p.asked.at(-1)).toContain('принята. Что дальше?')
+  expect(p.prompts.at(-1)).toBe('кнопка мелкая')
+  expect(await task($)).toContain('фаза: accepted')
 
-  // Claude reopens from the person's own words; nothing to reopen while the task is in work
+  // Claude reads the words and reopens; nothing to reopen while the task is in work
+  let r = await $.tool.call({ tool: 'mcp__session-board__reopen', kind: 'redo', text: 'кнопка мелкая' })
+  expect(r.text).toContain('Переделай задачу «Выпустить доску», раунд 3: кнопка мелкая.')
   const busy = await $.tool.call({ tool: 'mcp__session-board__reopen', kind: 'redo', text: 'ещё раз' })
   expect(busy.text).toContain('Not reopened')
   await accept(['K1', 'K2', 'K3'])
-  const r = await $.tool.call({ tool: 'mcp__session-board__reopen', kind: 'redo', text: 'подпись под кнопкой' })
+  r = await $.tool.call({ tool: 'mcp__session-board__reopen', kind: 'redo', text: 'подпись под кнопкой' })
   expect(r.text).toContain('Переделай задачу «Выпустить доску», раунд 4: подпись под кнопкой.')
   expect(await task($)).toContain('фаза: work')
   // «Вернуть: …» after acceptance reopens as well
   await accept(['K1', 'K2', 'K3'])
   await $.prompt.submit({ text: 'Вернуть: опечатка в README', origin: BRIDGE })
   expect(await task($)).toContain('раунд 5')
+  // «Дополнить: …» on the Acceptance screen needs no «Принять» first
+  await $.tool.call({ tool: 'mcp__session-board__submit', summary_ru: 'Готово.', criteria: ['K1', 'K2', 'K3'].map(id => ({ id, status: 'proven', result_ru: 'Да.' })) })
+  const review = await $.command.run({ command: 'board', args: '', origin: BRIDGE, presentation: { isFullscreen: false, columns: 60 } })
+  expect(review.text).toContain('«Дополнить: что добавить»')
+  await $.prompt.submit({ text: 'Дополнить: подсказка под полем', origin: BRIDGE })
+  t = await task($)
+  expect(t).toContain('фаза: work')
+  expect(t).toContain('раунд 6')
+  expect(t).toContain('**K4** подсказка под полем')
+  expect(p.prompts.at(-1)).toContain('Дополни задачу «Выпустить доску», раунд 6: подсказка под полем. Это новый пункт K4')
 
-  // the protocol tells Claude the three ways after acceptance
-  expect(protocol('', '')).toContain('5. After acceptance')
+  // the protocol tells Claude to read the three ways from the person's message
+  expect(protocol('', '')).toContain('5. What is next. The board has no buttons for it')
   expect(protocol('', '')).toContain('mcp__session-board__reopen')
 })

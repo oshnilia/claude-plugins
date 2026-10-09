@@ -29,11 +29,13 @@ export function parseChatCommand(text: string, phase: Phase | undefined, free = 
   if (!freeWork && FREE.test(text)) return { kind: 'free' }
   if (freeWork && WRAP.test(text)) return { kind: 'wrap' }
   if (phase === 'intake' && START.test(text)) return { kind: 'start' }
+  // «Дополнить: …» reopens the same task on the Acceptance screen too, without «Принять»
+  const e = !free && (phase === 'accepted' || phase === 'review') ? EXTEND.exec(text) : null
+  if (e) return { kind: 'extend', remark: e[2]!.trim() }
   if (phase === 'accepted' && !free) {
     // after acceptance «Вернуть: …» and «Переделать: …» reopen the same task
-    const e = EXTEND.exec(text)
-    const m = e ?? RETURN.exec(text)
-    return m ? { kind: e ? 'extend' : 'redo', remark: m[2]!.trim() } : null
+    const m = RETURN.exec(text)
+    return m ? { kind: 'redo', remark: m[2]!.trim() } : null
   }
   if (phase !== 'review') return null
   if (ACCEPT.test(text)) return { kind: 'accept' }
@@ -88,7 +90,7 @@ export function boardText(L: Ledger): string {
     for (const n of lean) out.push(`- ${TAG[n.tag!].label}: ${n.title.ru}${n.statement ? ` — ${n.statement.ru}` : ''}`)
   }
   const hint = t.phase === 'intake' ? 'Ответьте «Старт», чтобы начать, или напишите, что поправить.'
-    : t.phase === 'review' ? 'Ответьте «Принять» или «Вернуть: что поправить».'
+    : t.phase === 'review' ? 'Ответьте «Принять», «Вернуть: что поправить» или «Дополнить: что добавить».'
       : t.phase === 'accepted' ? 'Дальше: «Переделать: что не так», «Дополнить: что добавить» или опишите новую задачу.'
         : qs.length ? 'Ответьте на вопрос обычным сообщением.' : ''
   if (hint) out.push('', hint)

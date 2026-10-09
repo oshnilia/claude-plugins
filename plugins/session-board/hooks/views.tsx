@@ -2,7 +2,7 @@ import type { ElementTable } from 'claude-code'
 
 import type { Authority, BoardStatus, DiffView, Kind, LeanLevel, Ledger, LedgerNode, LiveEvent, OpenTask, Phase, QA, Verdict } from '../types'
 import { LEAN_DEBT_ASK, LEAN_LEVEL, LEAN_LEVELS, LEAN_REVIEW_ASK, leanItems, TAG } from './lean'
-import { AUTHORITIES, AUTHORITY, criteriaOf, IDEA, ideasOf, phaseView, proofOf, renderSummary, ruleCandidates, verdictLine, type ReopenKind, type VerdictKind } from './task'
+import { AUTHORITIES, AUTHORITY, criteriaOf, IDEA, ideasOf, phaseView, proofOf, renderSummary, ruleCandidates, verdictLine, type VerdictKind } from './task'
 
 // Layout rules: docs/mod-design.md. Width comes from e.props.bodyColumns. Rows are a fixed gutter
 // (flexShrink 0) plus a growing, wrapping body (flexGrow 1, minWidth 0). Every gap is an explicit margin.
@@ -42,7 +42,6 @@ export type Actions = {
   addGeneral: (text: string) => void
   toggleRule: (text: string) => void
   sendVerdict: (kind: VerdictKind) => void
-  reopen: (kind: ReopenKind, text: string) => void
   openReport: () => void
   continueTask: (dir: string) => void
 }
@@ -374,22 +373,20 @@ function NoTask(els: Els, d: Data, a: Actions) {
   )
 }
 
-/** After acceptance: redo or extend the same task (back to work at once, no Start), or a new task. */
-function AfterAccept(els: Els, d: Data, a: Actions) {
-  const { Box, Button } = els
-  const field = d.editing === 'redo' ? Field(els, 'redo', 'Что переделать', 'что не так в принятой работе', 'в работу', v => a.reopen('redo', v), () => a.edit(''))
-    : d.editing === 'extend' ? Field(els, 'extend', 'Что добавить', 'новый пункт «готово, когда»', 'в работу', v => a.reopen('extend', v), () => a.edit(''))
-      : d.editing === 'intake' ? Field(els, 'intake', 'Новая задача', 'что сделать, зачем, что сдать, что нельзя', 'поставить', v => a.newTask(v), () => a.edit(''))
-        : null
+/**
+ * What is next is the person's own message, not a button: Claude reads it and redoes or extends the same task (back to
+ * work at once, without a verdict and without Start) or writes a new brief. On the Acceptance screen it stands under
+ * the verdict, so a redo needs no «Принять» first.
+ */
+function AfterAccept(els: Els, d: Data) {
+  const { Box } = els
+  const accepted = d.ledger.task?.phase === 'accepted'
   return (
     <Box key="after-accept" flexDirection="column">
-      {Rule(els, 'r-next', 'Дальше')}
-      {Para(els, 'aa-what', '«Переделать» и «Дополнить» сразу вернут эту задачу в работу, без «Старт». «Новая задача» — отдельная задача.', true)}
-      {field ?? ActionBar(els, 'aa-a', [
-        Once(els, d, 'intake', <Button key="task-new" label="Новая задача" variant="primary" onPress={() => a.edit('intake')} />),
-        <Button key="task-redo" label="Переделать" onPress={() => a.edit('redo')} />,
-        <Button key="task-extend" label="Дополнить" onPress={() => a.edit('extend')} />,
-      ])}
+      {Rule(els, 'r-next', accepted ? 'Дальше' : 'Или сразу в работу')}
+      {Para(els, 'aa-what', accepted
+        ? 'Напиши в чат, что дальше: переделать, дополнить или новая задача. Claude поймёт сам и вернёт эту задачу в работу без «Старт» или запишет новое задание.'
+        : 'Нужно переделать или добавить? Напиши об этом в чат: Claude вернёт задачу в работу без «Принять».', true)}
     </Box>
   )
 }
@@ -449,7 +446,7 @@ export function TaskView(els: Els, d: Data, a: Actions) {
           {AddBar(els, d, a, ['rule', 'ban', 'fact', 'criterion'])}
         </Box>
       ) : null}
-      {t.phase === 'accepted' ? AfterAccept(els, d, a) : null}
+      {t.phase === 'accepted' ? AfterAccept(els, d) : null}
       {Rule(els, 'r-free', 'Свободный режим')}
       {Para(els, 'tf-free', t.phase === 'accepted'
         ? 'Без задания и приёмки: обсуждаем, пробуем, переделываем; в конце Claude подводит итог по идеям.'
@@ -755,7 +752,7 @@ export function ReviewView(els: Els, d: Data, a: Actions) {
     return (
       <Box flexDirection="column">
         {head}
-        {AfterAccept(els, d, a)}
+        {AfterAccept(els, d)}
       </Box>
     )
   }
@@ -826,6 +823,8 @@ export function ReviewView(els: Els, d: Data, a: Actions) {
                 fixes ? <Button key="v-fixes" label="Принять с правками" onPress={() => a.sendVerdict('fixes')} /> : null,
                 <Button key="v-return" label="Вернуть" onPress={() => a.sendVerdict('return')} />,
               ])}
+              {/* drafted remarks leave with a verdict; a reopen would drop them */}
+              {fixes ? null : AfterAccept(els, d)}
             </Box>
           )}
     </Box>
@@ -1128,8 +1127,7 @@ export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act
       : phase === 'intake' ? { label: 'Проверить и начать', press: () => act.open('task') }
         : phase === 'review' && b.fixes ? { label: `Отправить приёмку · правок ${b.fixes}`, press: () => act.open('review') }
           : phase === 'review' ? { label: 'Принять работу', press: () => act.accept() }
-            : phase === 'accepted' ? { label: 'Что дальше', press: () => act.open('review') }
-              : null
+            : null
   // the band draws its own collapse mark at the right edge: leave it room
   const row = (
     <Box key="band-row" flexDirection="row" justifyContent="space-between" columnGap={2} paddingRight={4}>
@@ -1139,6 +1137,8 @@ export function Band(els: Pick<Els, 'Box' | 'Text' | 'Button'>, b: BandData, act
       </Box>
       <Box flexDirection="row" columnGap={2} flexShrink={0} alignItems="center">
         {phase === 'work' && tasks.length && !free ? <Text dimColor>{`${done}/${tasks.length} шагов`}</Text> : null}
+        {/* what is next is the person's own message: Claude reads it, no button to pick first */}
+        {phase === 'accepted' && !free && !waiting ? <Text dimColor>что дальше — напиши</Text> : null}
         {main ? <Button key="band-main" label={main.label} variant="primary" onPress={main.press} /> : null}
         {phase === 'review' && !waiting && !b.fixes ? <Button key="band-review" plain label="посмотреть" onPress={() => act.open('review')} /> : null}
         <Button key="band-open" plain label="доска" onPress={() => act.open('')} />
